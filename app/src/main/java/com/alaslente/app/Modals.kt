@@ -31,7 +31,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -636,7 +635,11 @@ fun UploadEditModalDialog(
 
     var caption by remember { mutableStateOf(editingPost?.caption ?: "") }
     var location by remember { mutableStateOf(editingPost?.location ?: "") }
-    var dateTaken by remember { mutableStateOf(editingPost?.dateLabel?.ifBlank { getManilaTodayMMDDYYYY() } ?: getManilaTodayMMDDYYYY()) }
+    var dateTaken by remember {
+        mutableStateOf(
+            editingPost?.dateLabel?.ifBlank { getManilaTodayMMDDYYYY() } ?: getManilaTodayMMDDYYYY()
+        )
+    }
 
     val initialTime24 = editingPost?.capturedTime?.ifBlank { getManilaNow24() } ?: getManilaNow24()
     val initParts = initialTime24.split(":")
@@ -648,7 +651,7 @@ fun UploadEditModalDialog(
     var ampm by remember { mutableStateOf(if (initH24 >= 12) "PM" else "AM") }
 
     var mediaEntries by remember {
-        mutableStateOf(
+        mutableStateOf<List<EditableMediaEntry>>(
             editingPost?.resolvedMediaItems()?.map { item ->
                 EditableMediaEntry(
                     id = UUID.randomUUID().toString(),
@@ -789,7 +792,6 @@ fun UploadEditModalDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Hour Stepper
                     OutlinedButton(
                         onClick = { hour12 = if (hour12 == 12) 1 else hour12 + 1 },
                         shape = RoundedCornerShape(8.dp),
@@ -804,7 +806,6 @@ fun UploadEditModalDialog(
                         )
                     }
                     Text(":", color = colors.textMuted, fontWeight = FontWeight.Bold)
-                    // Minute Stepper
                     OutlinedButton(
                         onClick = { minute = (minute + 1) % 60 },
                         shape = RoundedCornerShape(8.dp),
@@ -818,7 +819,6 @@ fun UploadEditModalDialog(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    // AM / PM Toggle
                     Button(
                         onClick = { ampm = if (ampm == "AM") "PM" else "AM" },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.accent),
@@ -931,7 +931,6 @@ fun UploadEditModalDialog(
                                     modifier = Modifier.fillMaxSize()
                                 )
 
-                                // #1..#4 Badge
                                 Text(
                                     text = "#${idx + 1}",
                                     color = Color.White,
@@ -945,7 +944,6 @@ fun UploadEditModalDialog(
                                         .padding(horizontal = 5.dp, vertical = 1.dp)
                                 )
 
-                                // Remove Button
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
@@ -960,7 +958,6 @@ fun UploadEditModalDialog(
                                     Text("✕", color = Color.White, fontSize = 10.sp)
                                 }
 
-                                // Left / Right Reorder Controls
                                 Row(
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
