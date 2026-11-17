@@ -1,7 +1,14 @@
 package com.alaslente.app
 
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Canvas as AndroidCanvas
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.Typeface
 import android.net.Uri
+import android.os.Environment
 import android.widget.MediaController
 import android.widget.Toast
 import android.widget.VideoView
@@ -56,12 +63,20 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.FileProvider
+import coil3.ImageLoader
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.allowHardware
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 import java.time.LocalDate
 import java.time.YearMonth
 import java.util.UUID
@@ -110,7 +125,7 @@ fun WebsiteModalShell(
     }
 }
 
-// Reusable Compact .btn from style.css
+// Reusable Uniform Button with fixed height to prevent vertical staggering
 @Composable
 fun WebsiteButton(
     text: String,
@@ -119,8 +134,6 @@ fun WebsiteButton(
     modifier: Modifier = Modifier,
     isPrimary: Boolean = false,
     enabled: Boolean = true,
-    horizontalPadding: Dp = 12.dp,
-    verticalPadding: Dp = 8.dp,
     fontSizeSp: Int = 12,
     mono: Boolean = false
 ) {
@@ -138,11 +151,12 @@ fun WebsiteButton(
 
     Box(
         modifier = modifier
+            .height(34.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(bgColor)
             .border(1.dp, borderColor, RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+            .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -256,7 +270,6 @@ fun LightboxDialog(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Header Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -297,7 +310,6 @@ fun LightboxDialog(
                 }
             }
 
-            // Controls Row (Counter + Zoom Pill + Share Story Pill)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -322,10 +334,11 @@ fun LightboxDialog(
                     if (activeItem.mediaType != "video") {
                         Row(
                             modifier = Modifier
+                                .height(34.dp)
                                 .clip(CircleShape)
                                 .background(colors.surface)
                                 .border(1.dp, colors.border, CircleShape)
-                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                                .padding(horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
@@ -383,13 +396,15 @@ fun LightboxDialog(
 
                     Box(
                         modifier = Modifier
+                            .height(34.dp)
                             .clip(CircleShape)
                             .background(colors.accent)
                             .clickable {
                                 onDismiss()
                                 onShareStory(post, currentIndex)
                             }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "Share Story",
@@ -401,7 +416,6 @@ fun LightboxDialog(
                 }
             }
 
-            // Lightbox Stage
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -501,7 +515,6 @@ fun LightboxDialog(
                 }
             }
 
-            // Bottom Caption & Thumbnails
             if (post.caption.isNotBlank() || post.location.isNotBlank() || items.size > 1) {
                 Column(
                     modifier = Modifier
@@ -551,7 +564,7 @@ fun LightboxDialog(
     }
 }
 
-// 2. True 9:16 (1080x1920) Story / MyDay Modal (Instant Live Preview + 1080x1920 Export)
+// 2. True 9:16 Story Modal (Title changed to "Story", uniform button heights)
 @Composable
 fun StoryModalDialog(
     post: MomentPost,
@@ -574,7 +587,7 @@ fun StoryModalDialog(
     val imgUrl = activeItem?.thumbnailUrl?.ifBlank { activeItem.mediaUrl }.orEmpty()
 
     WebsiteModalShell(colors = colors, maxWidth = 380.dp, onDismiss = onDismiss) {
-        // Modal Top Row
+        // Modal Top Row with perfectly uniform 34.dp height buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -583,18 +596,19 @@ fun StoryModalDialog(
             Text(
                 text = "Story",
                 color = colors.text,
-                fontSize = 14.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 if (items.size > 1) {
                     WebsiteButton(
                         text = "${slideIndex + 1}/${items.size} ↻",
                         colors = colors,
                         onClick = { slideIndex = (slideIndex + 1) % items.size },
-                        horizontalPadding = 9.dp,
-                        verticalPadding = 6.dp,
                         fontSizeSp = 11,
                         mono = true
                     )
@@ -604,8 +618,6 @@ fun StoryModalDialog(
                     text = storyStyle.nextLabel,
                     colors = colors,
                     onClick = { storyStyle = storyStyle.next() },
-                    horizontalPadding = 10.dp,
-                    verticalPadding = 6.dp,
                     fontSizeSp = 11
                 )
 
@@ -613,9 +625,7 @@ fun StoryModalDialog(
                     text = "✕",
                     colors = colors,
                     onClick = onDismiss,
-                    horizontalPadding = 10.dp,
-                    verticalPadding = 6.dp,
-                    fontSizeSp = 11
+                    fontSizeSp = 12
                 )
             }
         }
@@ -680,9 +690,9 @@ fun StoryModalDialog(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 34.dp),
+                    .padding(horizontal = 16.dp, vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterVertically)
+                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
             ) {
                 val cardBg = if (isLight) Color(0xEBFFFFFF) else Color(0xE0121218)
                 val cardBorder = if (isLight) Color(0x1A141418) else Color(0x29FFFFFF)
@@ -753,7 +763,7 @@ fun StoryModalDialog(
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(max = 185.dp)
+                                    .heightIn(max = 165.dp)
                             )
                         }
                     }
@@ -764,7 +774,7 @@ fun StoryModalDialog(
                             color = cardText,
                             fontSize = 11.sp,
                             lineHeight = 15.sp,
-                            maxLines = 4,
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
@@ -822,7 +832,6 @@ fun StoryModalDialog(
                 colors = colors,
                 isPrimary = true,
                 enabled = !isExporting,
-                verticalPadding = 10.dp,
                 onClick = {
                     isExporting = true
                     scope.launch {
@@ -842,7 +851,6 @@ fun StoryModalDialog(
                 text = "Save 1080×1920",
                 colors = colors,
                 enabled = !isExporting,
-                verticalPadding = 10.dp,
                 onClick = {
                     isExporting = true
                     scope.launch {
@@ -863,7 +871,6 @@ fun StoryModalDialog(
             )
         }
 
-        // Helper Tip
         Text(
             text = if (copiedTip) {
                 "✓ Exact post link copied! In IG Story, tap Sticker → Link → Paste over the card."
@@ -879,7 +886,7 @@ fun StoryModalDialog(
     }
 }
 
-// 3. Darkroom Admin Login Modal (#loginModal)
+// 3. Darkroom Admin Login Modal
 @Composable
 fun LoginModalDialog(
     colors: AlasColors,
@@ -909,8 +916,7 @@ fun LoginModalDialog(
                 text = "✕",
                 colors = colors,
                 onClick = onDismiss,
-                horizontalPadding = 11.dp,
-                verticalPadding = 7.dp
+                fontSizeStr = "12"
             )
         }
 
@@ -935,11 +941,13 @@ fun LoginModalDialog(
                 trailing = {
                     Box(
                         modifier = Modifier
+                            .height(28.dp)
                             .clip(RoundedCornerShape(6.dp))
                             .background(colors.surfaceAlt)
                             .border(1.dp, colors.border, RoundedCornerShape(6.dp))
                             .clickable { showPassword = !showPassword }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .padding(horizontal = 8.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = if (showPassword) "Hide" else "Show",
@@ -958,7 +966,6 @@ fun LoginModalDialog(
             colors = colors,
             isPrimary = true,
             enabled = !isSigningIn,
-            verticalPadding = 11.dp,
             onClick = {
                 if (email.isBlank() || password.isBlank()) return@WebsiteButton
                 isSigningIn = true
@@ -996,7 +1003,29 @@ fun LoginModalDialog(
     }
 }
 
-// 4. Admin Publish / Edit Moment Modal (#uploadModal)
+// Overload helper for WebsiteButton with String font size
+@Composable
+fun WebsiteButton(
+    text: String,
+    colors: AlasColors,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isPrimary: Boolean = false,
+    enabled: Boolean = true,
+    fontSizeStr: String = "12"
+) {
+    WebsiteButton(
+        text = text,
+        colors = colors,
+        onClick = onClick,
+        modifier = modifier,
+        isPrimary = isPrimary,
+        enabled = enabled,
+        fontSizeSp = fontSizeStr.toIntOrNull() ?: 12
+    )
+}
+
+// 4. Admin Publish / Edit Moment Modal
 @Composable
 fun UploadEditModalDialog(
     editingPost: MomentPost?,
@@ -1104,12 +1133,10 @@ fun UploadEditModalDialog(
                     text = "✕",
                     colors = colors,
                     onClick = { if (!isPublishing) onDismiss() },
-                    horizontalPadding = 11.dp,
-                    verticalPadding = 7.dp
+                    fontSizeStr = "12"
                 )
             }
 
-            // 1. Caption
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1121,7 +1148,6 @@ fun UploadEditModalDialog(
                         text = "${caption.length} / $MAX_CAPTION_CHARS",
                         color = if (caption.length >= MAX_CAPTION_CHARS - 20) colors.accent else colors.textMuted,
                         fontSize = 11.sp,
-                        fontWeight = if (caption.length >= MAX_CAPTION_CHARS - 20) FontWeight.SemiBold else FontWeight.Normal,
                         fontFamily = FontFamily.Monospace
                     )
                 }
@@ -1135,7 +1161,6 @@ fun UploadEditModalDialog(
                 )
             }
 
-            // 2. Time Taken & 3. Date Taken
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -1246,7 +1271,6 @@ fun UploadEditModalDialog(
                 }
             }
 
-            // 4. Location (Optional)
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("Location", color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -1260,7 +1284,6 @@ fun UploadEditModalDialog(
                 )
             }
 
-            // 5. Photos / Videos (Max 4, 2-Column Reorder Grid)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1416,13 +1439,11 @@ fun UploadEditModalDialog(
                 }
             }
 
-            // Submit Button
             WebsiteButton(
                 text = if (isEditing) "Save Changes" else "Upload & Publish",
                 colors = colors,
                 isPrimary = true,
                 enabled = !isPublishing,
-                verticalPadding = 12.dp,
                 onClick = {
                     if (mediaEntries.isEmpty()) {
                         statusMsg = "Please keep or select at least 1 photo or video (up to 4)."
@@ -1689,18 +1710,14 @@ private fun TimePickerPopupDialog(
                 text = "Now",
                 colors = colors,
                 onClick = onNow,
-                horizontalPadding = 10.dp,
-                verticalPadding = 5.dp,
-                fontSizeSp = 11
+                fontSizeStr = "11"
             )
             WebsiteButton(
                 text = "Done",
                 colors = colors,
                 isPrimary = true,
                 onClick = onDismiss,
-                horizontalPadding = 12.dp,
-                verticalPadding = 5.dp,
-                fontSizeSp = 11
+                fontSizeStr = "11"
             )
         }
     }
@@ -1859,20 +1876,258 @@ private fun DatePickerPopupDialog(
                     onSelectDate(formatDate(todayDate))
                     viewMonth = YearMonth.from(todayDate)
                 },
-                horizontalPadding = 10.dp,
-                verticalPadding = 5.dp,
-                fontSizeSp = 11
+                fontSizeStr = "11"
             )
             WebsiteButton(
                 text = "Done",
                 colors = colors,
                 isPrimary = true,
                 onClick = onDismiss,
-                horizontalPadding = 12.dp,
-                verticalPadding = 5.dp,
-                fontSizeSp = 11
+                fontSizeStr = "11"
             )
         }
+    }
+}
+
+// 4. Robust Native Android 2D Canvas Story Renderer (1080x1920) with Zero Text/Pill Clipping
+suspend fun renderStoryBitmap(
+    context: Context,
+    post: MomentPost,
+    slideIndex: Int,
+    style: StoryStyle
+): Bitmap = withContext(Dispatchers.IO) {
+    val width = 1080
+    val height = 1920
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = AndroidCanvas(bitmap)
+
+    val isLight = style == StoryStyle.AMBIENT_LIGHT
+    val isMatte = style == StoryStyle.MATTE_DARK
+
+    // 1. Background Fill
+    val bgPaint = Paint().apply {
+        color = when (style) {
+            StoryStyle.AMBIENT_DARK -> android.graphics.Color.parseColor("#0D0D12")
+            StoryStyle.AMBIENT_LIGHT -> android.graphics.Color.parseColor("#EBE6DA")
+            StoryStyle.MATTE_DARK -> android.graphics.Color.parseColor("#0B0B0F")
+        }
+    }
+    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+
+    // 2. Load Photo Bitmap via Coil 3
+    val items = post.resolvedMediaItems()
+    val activeItem = items.getOrNull(slideIndex) ?: items.firstOrNull()
+    val imgUrl = activeItem?.thumbnailUrl?.ifBlank { activeItem.mediaUrl }.orEmpty()
+
+    var photoBmp: Bitmap? = null
+    if (imgUrl.isNotBlank()) {
+        try {
+            val loader = ImageLoader(context)
+            val req = ImageRequest.Builder(context)
+                .data(imgUrl)
+                .allowHardware(false)
+                .build()
+            val result = loader.execute(req)
+            photoBmp = (result.image as? coil3.BitmapImage)?.bitmap
+        } catch (_: Exception) {}
+    }
+
+    // 3. Draw Centered Card Container
+    val cardWidth = (width * 0.86f).toInt()
+    val cardHeight = 1380
+    val cardLeft = (width - cardWidth) / 2
+    val cardTop = 150
+
+    val cardBgColor = if (isLight) android.graphics.Color.parseColor("#EBFFFFFF") else android.graphics.Color.parseColor("#E0121218")
+    val cardPaint = Paint().apply {
+        color = cardBgColor
+        isAntiAlias = true
+        style = Paint.Style.FILL
+    }
+    val cardRect = Rect(cardLeft, cardTop, cardLeft + cardWidth, cardTop + cardHeight)
+    canvas.drawRoundRect(cardRect.toRectF(), 42f, 42f, cardPaint)
+
+    val cardBorderPaint = Paint().apply {
+        color = if (isLight) android.graphics.Color.parseColor("#1A141418") else android.graphics.Color.parseColor("#29FFFFFF")
+        isAntiAlias = true
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+    }
+    canvas.drawRoundRect(cardRect.toRectF(), 42f, 42f, cardBorderPaint)
+
+    val contentLeft = cardLeft + 48
+    val contentRight = cardLeft + cardWidth - 48
+    var cursorY = cardTop + 54
+
+    val accentColor = if (isLight) android.graphics.Color.parseColor("#C86D1F") else android.graphics.Color.parseColor("#F09446")
+    val textColor = if (isLight) android.graphics.Color.parseColor("#18181B") else android.graphics.Color.parseColor("#F4F3EF")
+    val mutedColor = if (isLight) android.graphics.Color.parseColor("#66666E") else android.graphics.Color.parseColor("#A1A1AA")
+
+    // Header: Badge + Time
+    val dotPaint = Paint().apply { color = accentColor; isAntiAlias = true }
+    canvas.drawCircle((contentLeft + 12).toFloat(), (cursorY + 12).toFloat(), 10f, dotPaint)
+
+    val labelPaint = Paint().apply {
+        color = accentColor
+        textSize = 34f
+        isTypeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        isAntiAlias = true
+    }
+    canvas.drawText(post.alasLabel.ifBlank { "Alas-Lente" }, (contentLeft + 40).toFloat(), (cursorY + 24).toFloat(), labelPaint)
+
+    val timeText = post.formatted12h.ifBlank { post.capturedTime }
+    val timePaint = Paint().apply {
+        color = textColor
+        textSize = 30f
+        isTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        isAntiAlias = true
+    }
+    val timeWidth = timePaint.measureText(timeText)
+    canvas.drawText(timeText, (contentRight - timeWidth - 24).toFloat(), (cursorY + 24).toFloat(), timePaint)
+    cursorY += 72
+
+    // Photo Box Inside Card
+    val photoBoxHeight = 650
+    val photoBoxRect = Rect(contentLeft, cursorY, contentRight, cursorY + photoBoxHeight)
+    val photoBoxBg = Paint().apply {
+        color = if (isLight) android.graphics.Color.parseColor("#0A000000") else android.graphics.Color.parseColor("#40000000")
+        isAntiAlias = true
+    }
+    canvas.drawRoundRect(photoBoxRect.toRectF(), 24f, 24f, photoBoxBg)
+
+    if (photoBmp != null) {
+        val srcW = photoBmp.width.toFloat()
+        val srcH = photoBmp.height.toFloat()
+        val dstW = (contentRight - contentLeft).toFloat()
+        val dstH = photoBoxHeight.toFloat()
+        val scale = minOf(dstW / srcW, dstH / srcH)
+        val scaledW = srcW * scale
+        val scaledH = srcH * scale
+        val left = contentLeft + (dstW - scaledW) / 2f
+        val top = cursorY + (dstH - scaledH) / 2f
+        canvas.drawBitmap(photoBmp, null, android.graphics.RectF(left, top, left + scaledW, top + scaledH), Paint(Paint.FILTER_BITMAP_FLAG))
+    }
+    cursorY += photoBoxHeight + 42
+
+    // Caption (Wrapped cleanly)
+    if (post.caption.isNotBlank()) {
+        val captionPaint = Paint().apply {
+            color = textColor
+            textSize = 34f
+            isTypeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            isAntiAlias = true
+        }
+        val lines = wrapTextToLines(post.caption, captionPaint, (contentRight - contentLeft).toFloat())
+        for (line in lines.take(3)) {
+            canvas.drawText(line, contentLeft.toFloat(), cursorY.toFloat(), captionPaint)
+            cursorY += 46
+        }
+        cursorY += 16
+    }
+
+    // Footer: Location & Date
+    val footerPaint = Paint().apply {
+        color = mutedColor
+        textSize = 28f
+        isTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+        isAntiAlias = true
+    }
+    val locText = if (post.location.isNotBlank()) "📍 ${post.location}" else "Alas-Lente Archive"
+    canvas.drawText(locText, contentLeft.toFloat(), cursorY.toFloat(), footerPaint)
+
+    if (post.dateLabel.isNotBlank()) {
+        val dateW = footerPaint.measureText(post.dateLabel)
+        canvas.drawText(post.dateLabel, (contentRight - dateW).toFloat(), cursorY.toFloat(), footerPaint)
+    }
+
+    // Bottom Brand Pill (Positioned perfectly inside canvas with safety margin)
+    val brandPillY = 1660f
+    val brandText = "ALAS-LENTE  •  BAWAT ORAS MAY KWENTO"
+    val brandPaint = Paint().apply {
+        color = textColor
+        textSize = 26f
+        isTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        isAntiAlias = true
+    }
+    val brandW = brandPaint.measureText(brandText)
+    val pillPadX = 36f
+    val pillPadY = 18f
+    val pillRect = android.graphics.RectF(
+        (width / 2) - (brandW / 2) - pillPadX,
+        brandPillY - 32f,
+        (width / 2) + (brandW / 2) + pillPadX,
+        brandPillY + pillPadY + 14f
+    )
+    val pillBg = Paint().apply {
+        color = if (isLight) android.graphics.Color.parseColor("#C7FFFFFF") else android.graphics.Color.parseColor("#A60E0E13")
+        isAntiAlias = true
+    }
+    canvas.drawRoundRect(pillRect, 32f, 32f, pillBg)
+    canvas.drawText(brandText, (width / 2) - (brandW / 2), brandPillY + 4f, brandPaint)
+
+    bitmap
+}
+
+// Helper: Word Wrap for Native Canvas Text
+private fun wrapTextToLines(text: String, paint: Paint, maxWidth: Float): List<String> {
+    val lines = mutableListOf<String>()
+    val paragraphs = text.split("\n")
+    for (paragraph in paragraphs) {
+        val words = paragraph.split(" ")
+        var currentLine = ""
+        for (word in words) {
+            val testLine = if (currentLine.isEmpty()) word else "$currentLine $word"
+            if (paint.measureText(testLine) <= maxWidth) {
+                currentLine = testLine
+            } else {
+                if (currentLine.isNotEmpty()) lines.add(currentLine)
+                currentLine = word
+            }
+        }
+        if (currentLine.isNotEmpty()) lines.add(currentLine)
+    }
+    return lines
+}
+
+private fun android.graphics.Rect.toRectF() = android.graphics.RectF(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
+
+// Save Story Bitmap to Gallery
+private suspend fun saveStoryToGallery(context: Context, bitmap: Bitmap, postId: String): Boolean = withContext(Dispatchers.IO) {
+    try {
+        val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Alas-Lente")
+        if (!dir.exists()) dir.mkdirs()
+        val file = File(dir, "story_${postId}_${System.currentTimeMillis()}.png")
+        FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+        val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(file))
+        context.sendBroadcast(mediaScanIntent)
+        true
+    } catch (_: Exception) {
+        false
+    }
+}
+
+// Share Story Bitmap and Post Link to Apps (Instagram, Messenger, etc.)
+private fun shareStoryToApps(context: Context, bitmap: Bitmap, post: MomentPost) {
+    try {
+        val dir = File(context.cacheDir, "shares")
+        if (!dir.exists()) dir.mkdirs()
+        val file = File(dir, "story_share_${System.currentTimeMillis()}.png")
+        FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, "$SITE_BASE_URL/?post=${post.id}")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(shareIntent, "Share Story to..."))
+    } catch (e: Exception) {
+        Toast.makeText(context, "Could not share story: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
     }
 }
 
