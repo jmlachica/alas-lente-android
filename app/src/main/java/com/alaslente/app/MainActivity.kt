@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -163,21 +164,20 @@ fun AlasLenteApp() {
     Scaffold(
         containerColor = colors.bg,
         topBar = {
-            // Sticky Site Header matching index.html & style.css
+            // Sticky Site Header matching .site-header
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(colors.bg.copy(alpha = 0.94f))
+                    .background(colors.bg.copy(alpha = 0.92f))
                     .statusBarsPadding()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Brand + Live Manila Clock
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -189,13 +189,13 @@ fun AlasLenteApp() {
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
-                                    .shadow(6.dp, CircleShape, ambientColor = colors.accent, spotColor = colors.accent)
+                                    .shadow(8.dp, CircleShape, ambientColor = colors.accent, spotColor = colors.accent)
                                     .background(colors.accent, CircleShape)
                             )
                             Text(
                                 text = "ALAS-LENTE",
                                 color = colors.text,
-                                fontSize = 18.sp,
+                                fontSize = 19.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = (-0.3).sp
                             )
@@ -209,9 +209,8 @@ fun AlasLenteApp() {
                         )
                     }
 
-                    // Header Action Pills
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (!isAdmin) {
@@ -242,15 +241,23 @@ fun AlasLenteApp() {
             }
         },
         floatingActionButton = {
+            // .fab-new-moment matching index.html
             if (isAdmin) {
-                FloatingActionButton(
-                    onClick = { showCreateModal = true },
-                    containerColor = colors.accent,
-                    contentColor = Color.White,
-                    shape = CircleShape,
-                    modifier = Modifier.size(54.dp)
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .shadow(12.dp, CircleShape)
+                        .clip(CircleShape)
+                        .background(colors.accent)
+                        .border(1.dp, Color(0x2EFFFFFF), CircleShape)
+                        .clickable { showCreateModal = true },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("+", fontSize = 26.sp, fontWeight = FontWeight.Medium)
+                    Canvas(modifier = Modifier.size(22.dp)) {
+                        val stroke = 2.4.dp.toPx()
+                        drawLine(Color.White, Offset(center.x, 0f), Offset(center.x, size.height), stroke, StrokeCap.Round)
+                        drawLine(Color.White, Offset(0f, center.y), Offset(size.width, center.y), stroke, StrokeCap.Round)
+                    }
                 }
             }
         }
@@ -260,9 +267,9 @@ fun AlasLenteApp() {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Time-of-Day Filter Bar
+            // Time-of-Day Filter Bar (.filter-bar)
             LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(FILTER_PERIODS) { (periodKey, label) ->
@@ -289,7 +296,7 @@ fun AlasLenteApp() {
                 }
             }
 
-            // Feed States
+            // Feed Grid States
             when {
                 isLoading -> {
                     Box(
@@ -336,8 +343,8 @@ fun AlasLenteApp() {
                 }
                 else -> {
                     LazyColumn(
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 88.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp)
+                        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 92.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
                     ) {
                         items(visiblePosts, key = { it.id }) { post ->
                             ViewfinderPostCard(
@@ -413,37 +420,58 @@ fun AlasLenteApp() {
         )
     }
 
-    // Admin Delete Confirmation Dialog
+    // Website-Styled Delete Confirmation Modal
     deletingPost?.let { target ->
-        AlertDialog(
-            onDismissRequest = { deletingPost = null },
-            containerColor = colors.surface,
-            title = { Text("Remove Moment", color = colors.text, fontWeight = FontWeight.Bold) },
-            text = { Text("Remove this post from Alas-Lente?", color = colors.textMuted) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val idToDelete = target.id
-                        deletingPost = null
-                        scope.launch {
-                            FirebaseFirestore.getInstance()
-                                .collection("posts")
-                                .document(idToDelete)
-                                .delete()
-                                .await()
-                            loadPosts()
+        WebsiteModalShell(
+            colors = colors,
+            maxWidth = 340.dp,
+            onDismiss = { deletingPost = null }
+        ) {
+            Text(
+                text = "Remove Moment",
+                color = colors.text,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Remove this post from Alas-Lente?",
+                color = colors.textMuted,
+                fontSize = 13.sp
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                WebsiteButton(
+                    text = "Cancel",
+                    colors = colors,
+                    onClick = { deletingPost = null },
+                    modifier = Modifier.weight(1f)
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(colors.danger)
+                        .clickable {
+                            val idToDelete = target.id
+                            deletingPost = null
+                            scope.launch {
+                                FirebaseFirestore.getInstance()
+                                    .collection("posts")
+                                    .document(idToDelete)
+                                    .delete()
+                                    .await()
+                                loadPosts()
+                            }
                         }
-                    }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("Delete", color = colors.danger, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deletingPost = null }) {
-                    Text("Cancel", color = colors.text)
+                    Text("Delete", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
-        )
+        }
     }
 }
 
@@ -459,7 +487,7 @@ private fun HeaderPillButton(
             .background(colors.surface)
             .border(1.dp, colors.border, CircleShape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 13.dp, vertical = 7.dp)
     ) {
         Text(
             text = label,
@@ -484,8 +512,10 @@ private fun ViewfinderPostCard(
     val scope = rememberCoroutineScope()
     val items = remember(post) { post.resolvedMediaItems() }
     val pagerState = rememberPagerState(pageCount = { items.size.coerceAtLeast(1) })
+    val slideRatios = remember(post.id) { mutableStateMapOf<Int, Float>() }
     var copied by remember { mutableStateOf(false) }
 
+    val activeRatio = (slideRatios[pagerState.currentPage] ?: (4f / 3f)).coerceIn(0.65f, 1.9f)
     val accentCornerColor = colors.accent.copy(alpha = 0.78f)
 
     Column(
@@ -510,11 +540,11 @@ private fun ViewfinderPostCard(
                 drawLine(accentCornerColor, Offset(size.width - inset, inset), Offset(size.width - inset, inset + len), stroke, StrokeCap.Square)
             }
     ) {
-        // Media Wrap
+        // Media Wrap matching dynamic aspect ratio in feed.js
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(4f / 3f)
+                .aspectRatio(activeRatio)
                 .background(Color(0xFF09090C))
         ) {
             if (items.isNotEmpty()) {
@@ -534,6 +564,13 @@ private fun ViewfinderPostCard(
                             model = displayUrl,
                             contentDescription = post.caption,
                             contentScale = ContentScale.Fit,
+                            onSuccess = { state ->
+                                val w = state.result.image.width
+                                val h = state.result.image.height
+                                if (w > 0 && h > 0) {
+                                    slideRatios[page] = w.toFloat() / h.toFloat()
+                                }
+                            },
                             modifier = Modifier.fillMaxSize()
                         )
                         if (item.mediaType == "video") {
@@ -551,7 +588,7 @@ private fun ViewfinderPostCard(
                 }
             }
 
-            // Top-Left Expand Button
+            // Top-Left Expand Vector Button (.expand-media-btn)
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -563,10 +600,21 @@ private fun ViewfinderPostCard(
                     .clickable { onOpenLightbox(pagerState.currentPage) },
                 contentAlignment = Alignment.Center
             ) {
-                Text("⤢", color = Color(0xFFF7F6F2), fontSize = 13.sp)
+                Canvas(modifier = Modifier.size(13.dp)) {
+                    val stroke = 1.8.dp.toPx()
+                    val c = Color(0xFFF7F6F2)
+                    // Top-right corner arrow
+                    drawLine(c, Offset(size.width * 0.6f, 0f), Offset(size.width, 0f), stroke, StrokeCap.Round)
+                    drawLine(c, Offset(size.width, 0f), Offset(size.width, size.height * 0.4f), stroke, StrokeCap.Round)
+                    drawLine(c, Offset(size.width, 0f), Offset(size.width * 0.56f, size.height * 0.44f), stroke, StrokeCap.Round)
+                    // Bottom-left corner arrow
+                    drawLine(c, Offset(0f, size.height * 0.6f), Offset(0f, size.height), stroke, StrokeCap.Round)
+                    drawLine(c, Offset(0f, size.height), Offset(size.width * 0.4f, size.height), stroke, StrokeCap.Round)
+                    drawLine(c, Offset(0f, size.height), Offset(size.width * 0.44f, size.height * 0.56f), stroke, StrokeCap.Round)
+                }
             }
 
-            // Top-Right Multi-Slide Counter Pill
+            // Top-Right Multi-Slide Counter Pill (.slide-counter)
             if (items.size > 1) {
                 Box(
                     modifier = Modifier
@@ -585,7 +633,7 @@ private fun ViewfinderPostCard(
                 }
             }
 
-            // Bottom-Left Time Badge
+            // Bottom-Left Time Badge (.time-badge)
             val timeBadgeText = post.formatted12h.ifBlank { post.capturedTime }
             if (timeBadgeText.isNotBlank()) {
                 Box(
@@ -594,7 +642,7 @@ private fun ViewfinderPostCard(
                         .padding(10.dp)
                         .background(Color(0xC70B0B0E), RoundedCornerShape(6.dp))
                         .border(1.dp, Color(0x24FFFFFF), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .padding(horizontal = 9.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = timeBadgeText,
@@ -605,7 +653,7 @@ private fun ViewfinderPostCard(
                 }
             }
 
-            // Bottom-Right Carousel Dots
+            // Bottom-Right Carousel Dots (.carousel-dots)
             if (items.size > 1) {
                 Row(
                     modifier = Modifier
@@ -628,14 +676,13 @@ private fun ViewfinderPostCard(
             }
         }
 
-        // Post Body
+        // Post Body (.post-body)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
+                .padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Alas Label + Date Label
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -649,7 +696,7 @@ private fun ViewfinderPostCard(
                 )
                 Text(
                     text = post.dateLabel,
-                    color = colors.accent.copy(alpha = 0.72f),
+                    color = colors.accent.copy(alpha = 0.7f),
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -660,7 +707,7 @@ private fun ViewfinderPostCard(
                     text = post.caption,
                     color = colors.text,
                     fontSize = 14.sp,
-                    lineHeight = 20.sp
+                    lineHeight = 21.sp
                 )
             }
 
@@ -668,19 +715,22 @@ private fun ViewfinderPostCard(
                 Text(
                     text = "📍 ${post.location}",
                     color = colors.textMuted,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }
 
             HorizontalDivider(thickness = 1.dp, color = colors.border)
 
-            // Copy Link & Share Story Buttons
+            // Copy Link & Share Story Buttons (.post-actions)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
+                WebsiteButton(
+                    text = if (copied) "Copied!" else "Copy Link",
+                    colors = colors,
+                    verticalPadding = 8.dp,
                     onClick = {
                         val shareUrl = "$SITE_BASE_URL/?post=${post.id}"
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -691,59 +741,47 @@ private fun ViewfinderPostCard(
                             copied = false
                         }
                     },
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = colors.surfaceAlt),
-                    border = BorderStroke(1.dp, colors.border),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(vertical = 8.dp),
                     modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = if (copied) "Copied!" else "Copy Link",
-                        color = colors.text,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+                )
 
-                Button(
+                WebsiteButton(
+                    text = "Share Story",
+                    colors = colors,
+                    isPrimary = true,
+                    verticalPadding = 8.dp,
                     onClick = { onShareStory(pagerState.currentPage) },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.accent),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(vertical = 8.dp),
                     modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = "Share Story",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                )
             }
 
-            // Admin Edit / Delete Row
+            // Admin Edit / Delete Row (.admin-post-actions)
             if (isAdmin) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = onEditPost,
-                        colors = ButtonDefaults.outlinedButtonColors(containerColor = colors.accentSoft),
-                        border = BorderStroke(1.dp, colors.accent),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(vertical = 7.dp),
-                        modifier = Modifier.weight(1f)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(colors.accentSoft)
+                            .border(1.dp, colors.accent, RoundedCornerShape(8.dp))
+                            .clickable(onClick = onEditPost)
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text("Edit", color = colors.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
 
-                    OutlinedButton(
-                        onClick = onDeletePost,
-                        border = BorderStroke(1.dp, colors.danger),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(vertical = 7.dp),
-                        modifier = Modifier.weight(1f)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Transparent)
+                            .border(1.dp, colors.danger, RoundedCornerShape(8.dp))
+                            .clickable(onClick = onDeletePost)
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text("Delete", color = colors.danger, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
