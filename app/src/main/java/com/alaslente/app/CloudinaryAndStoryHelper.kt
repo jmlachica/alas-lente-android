@@ -15,7 +15,7 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextUtils
 import androidx.core.content.FileProvider
-import androidx.core.graphics.drawable.toBitmap
+import coil3.toBitmap
 import coil3.ImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
