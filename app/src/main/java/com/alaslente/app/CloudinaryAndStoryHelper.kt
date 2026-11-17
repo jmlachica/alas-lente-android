@@ -5,94 +5,144 @@ import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.graphics.*
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color as AndroidColor
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.Shader
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextUtils
 import androidx.core.content.FileProvider
-import coil3.toBitmap
-import coil3.ImageLoader
+import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
+import coil3.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
-import kotlin.math.min
 
-private val okHttpClient = OkHttpClient.Builder()
-    .connectTimeout(30, TimeUnit.SECONDS)
-    .writeTimeout(60, TimeUnit.SECONDS)
-    .readTimeout(60, TimeUnit.SECONDS)
-    .build()
+// Keep your existing Cloudinary values here:
+private const val CLOUDINARY_CLOUD_NAME = "YOUR_CLOUD_NAME"
+private const val CLOUDINARY_UPLOAD_PRESET = "YOUR_UPLOAD_PRESET"
 
-suspend fun uploadMediaToCloudinary(context: Context, uri: Uri): MediaItem = withContext(Dispatchers.IO) {
-    val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
-    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        ?: throw IllegalStateException("Could not read selected file.")
-
-    val ext = when {
-        mimeType.contains("png") -> "png"
-        mimeType.contains("webp") -> "webp"
-        mimeType.contains("mp4") -> "mp4"
-        mimeType.contains("quicktime") || mimeType.contains("mov") -> "mov"
-        else -> "jpg"
-    }
-
-    val requestBody = MultipartBody.Builder()
-        .setType(MultipartBody.FORM)
-        .addFormDataPart(
-            "file",
-            "alas_lente_${System.currentTimeMillis()}.$ext",
-            bytes.toRequestBody(mimeType.toMediaTypeOrNull())
-        )
-        .addFormDataPart("upload_preset", CLOUDINARY_UPLOAD_PRESET)
-        .build()
-
-    val request = Request.Builder()
-        .url("https://api.cloudinary.com/v1_1/$CLOUDINARY_CLOUD_NAME/auto/upload")
-        .post(requestBody)
-        .build()
-
-    okHttpClient.newCall(request).execute().use { response ->
-        val bodyStr = response.body?.string().orEmpty()
-        val json = JSONObject(bodyStr)
-        if (!response.isSuccessful) {
-            val errMsg = json.optJSONObject("error")?.optString("message")
-                ?: "Cloudinary upload failed (${response.code})"
-            throw IllegalStateException(errMsg)
-        }
-
-        val isVideo = json.optString("resource_type") == "video"
-        val secureUrl = json.getString("secure_url")
-        val thumbUrl = if (isVideo) {
-            secureUrl.replace(Regex("\\.[^/.]+$"), ".jpg")
-        } else {
-            secureUrl
-        }
-
-        MediaItem(
-            mediaUrl = secureUrl,
-            thumbnailUrl = thumbUrl,
-            mediaType = if (isVideo) "video" else "image",
-            publicId = json.optString("public_id").takeIf { it.isNotBlank() }
-        )
-    }
+/**
+ * Converts a raw Cloudinary URL into a fast CDN-resized WebP/AVIF URL for display,
+ * while leaving the original raw URL untouched in Firestore.
+ */
+fun String.toOptimizedImageUrl(maxWidth: Int = 1080): String {
+    if (isBlank() || !contains("res.cloudinary.com") || !contains("/image/upload/")) return this
+    if (contains("/image/upload/f_auto")) return this
+    return replace("/image/upload/", "/image/upload/f_auto,q_auto,w_$maxWidth,c_limit/")
 }
 
+/**
+ * Streams the exact original file bytes from ContentResolver to Cloudinary
+ * with zero downscaling and zero re-compression.
+ */
+suspend fun uploadMediaToCloudinary(context: Context, uri: Uri): MediaItem =
+    withContext(Dispatchers.IO) {
+        val contentResolver = context.contentResolver
+        val mimeType = contentResolver.getType(uri) ?: "image/jpeg"
+        val isVideo = mimeType.startsWith("video/")
+
+        var originalFileName = "upload_${System.currentTimeMillis()}"
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) {
+                    val name = cursor.getString(idx)
+                    if (!name.isNullOrBlank()) originalFileName = name
+                }
+            }
+        }
+
+        val tempFile = File(context.cacheDir, "raw_${System.currentTimeMillis()}_$originalFileName")
+        try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                tempFile.outputStream().use { output ->
+                    input.copyTo(output, bufferSize = 64 * 1024)
+                }
+            } ?: throw IllegalStateException("Unable to read selected file.")
+
+            val resourceType = if (isVideo) "video" else "image"
+            val endpoint = "https://api.cloudinary.com/v1_1/$CLOUDINARY_CLOUD_NAME/$resourceType/upload"
+
+            val requestBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("upload_preset", CLOUDINARY_UPLOAD_PRESET)
+                .addFormDataPart(
+                    "file",
+                    originalFileName,
+                    tempFile.asRequestBody(mimeType.toMediaTypeOrNull())
+                )
+                .build()
+
+            val request = Request.Builder()
+                .url(endpoint)
+                .post(requestBody)
+                .build()
+
+            val client = OkHttpClient.Builder()
+                .connectTimeout(60, TimeUnit.SECONDS)
+                .writeTimeout(180, TimeUnit.SECONDS)
+                .readTimeout(180, TimeUnit.SECONDS)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Cloudinary upload failed (${response.code}): $bodyStr")
+                }
+
+                val json = JSONObject(bodyStr)
+                val secureUrl = json.getString("secure_url")
+                val publicId = json.optString("public_id", "")
+
+                val thumbUrl = if (isVideo) {
+                    secureUrl
+                        .replace("/video/upload/", "/video/upload/so_0,f_jpg,q_auto,w_1080/")
+                        .replace(Regex("\\.(mp4|mov|webm|mkv|avi)$", RegexOption.IGNORE_CASE), ".jpg")
+                } else {
+                    secureUrl
+                }
+
+                MediaItem(
+                    mediaUrl = secureUrl,
+                    thumbnailUrl = thumbUrl,
+                    mediaType = if (isVideo) "video" else "image",
+                    publicId = publicId
+                )
+            }
+        } finally {
+            if (tempFile.exists()) tempFile.delete()
+        }
+    }
+
+/**
+ * Renders the 1080x1920 9:16 Story card matching the website output:
+ * - Blurred ambient photo backdrop behind the card
+ * - Crisp 100% opaque foreground photo sized to its natural aspect ratio
+ * - Exact website typography, time pill, location/date footer, and bottom brand pill
+ */
 suspend fun renderStoryBitmap(
     context: Context,
     post: MomentPost,
@@ -101,328 +151,362 @@ suspend fun renderStoryBitmap(
 ): Bitmap = withContext(Dispatchers.IO) {
     val width = 1080
     val height = 1920
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(output)
 
+    val isLight = style == StoryStyle.AMBIENT_LIGHT
+    val isMatte = style == StoryStyle.MATTE_DARK
+
+    // 1. Solid base background
+    val baseBgColor = when (style) {
+        StoryStyle.AMBIENT_DARK -> AndroidColor.parseColor("#0D0D12")
+        StoryStyle.AMBIENT_LIGHT -> AndroidColor.parseColor("#EBE6DA")
+        StoryStyle.MATTE_DARK -> AndroidColor.parseColor("#0B0B0F")
+    }
+    canvas.drawColor(baseBgColor)
+
+    // 2. Load photo as software ARGB_8888 bitmap
     val items = post.resolvedMediaItems()
     val activeItem = items.getOrNull(slideIndex) ?: items.firstOrNull()
-    val imageUrl = activeItem?.thumbnailUrl?.ifBlank { activeItem.mediaUrl } ?: ""
+    val rawUrl = activeItem?.thumbnailUrl?.ifBlank { activeItem.mediaUrl }.orEmpty()
+    val fetchUrl = rawUrl.toOptimizedImageUrl(1440)
 
-    val sourceBitmap: Bitmap? = if (imageUrl.isNotBlank()) {
+    val photoBitmap: Bitmap? = if (fetchUrl.isNotBlank()) {
         try {
-            val loader = ImageLoader(context)
-            val req = ImageRequest.Builder(context)
-                .data(imageUrl)
+            val loader = SingletonImageLoader.get(context)
+            val request = ImageRequest.Builder(context)
+                .data(fetchUrl)
                 .allowHardware(false)
                 .build()
-            val result = loader.execute(req)
-            if (result is SuccessResult) result.image.toBitmap() else null
+            val result = loader.execute(request)
+            (result as? SuccessResult)?.image?.toBitmap()
         } catch (_: Exception) {
             null
         }
-    } else null
-
-    val isLight = style == StoryStyle.AMBIENT_LIGHT
-
-    // 1. Background Fill + Blurred Atmospheric Photo
-    canvas.drawColor(
-        when (style) {
-            StoryStyle.AMBIENT_DARK -> Color.parseColor("#0D0D12")
-            StoryStyle.AMBIENT_LIGHT -> Color.parseColor("#EBE6DA")
-            StoryStyle.MATTE_DARK -> Color.parseColor("#0B0B0F")
-        }
-    )
-
-    if (style == StoryStyle.MATTE_DARK) {
-        paint.shader = LinearGradient(
-            0f, 0f, width * 0.4f, height.toFloat(),
-            Color.parseColor("#191820"),
-            Color.parseColor("#0B0B0F"),
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
-        paint.shader = RadialGradient(
-            width * 0.5f, height * 0.25f, 750f,
-            Color.argb(24, 240, 148, 70),
-            Color.TRANSPARENT,
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
-        paint.shader = null
-    } else if (sourceBitmap != null) {
-        val small = Bitmap.createScaledBitmap(sourceBitmap, 72, 128, true)
-        val blurred = fastBoxBlur(small, 6)
-        canvas.drawBitmap(blurred, null, RectF(-80f, -80f, width + 80f, height + 80f), paint)
-
-        paint.shader = if (isLight) {
-            LinearGradient(
-                0f, 0f, 0f, height.toFloat(),
-                intArrayOf(
-                    Color.argb(180, 246, 243, 236),
-                    Color.argb(148, 246, 243, 236),
-                    Color.argb(200, 240, 235, 224)
-                ),
-                floatArrayOf(0f, 0.5f, 1f),
-                Shader.TileMode.CLAMP
-            )
-        } else {
-            LinearGradient(
-                0f, 0f, 0f, height.toFloat(),
-                intArrayOf(
-                    Color.argb(150, 8, 8, 12),
-                    Color.argb(115, 8, 8, 12),
-                    Color.argb(180, 8, 8, 12)
-                ),
-                floatArrayOf(0f, 0.5f, 1f),
-                Shader.TileMode.CLAMP
-            )
-        }
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
-        paint.shader = null
+    } else {
+        null
     }
 
-    // 2. Compute Card Dimensions Inside 9:16 Safe Zone
-    val cardMarginX = 72f
-    val cardWidth = width - (cardMarginX * 2)
-    val cardPad = 38f
-    val innerWidth = cardWidth - (cardPad * 2)
+    // 3. Draw blurred ambient photo backdrop (behind everything else)
+    if (!isMatte && photoBitmap != null && photoBitmap.width > 0 && photoBitmap.height > 0) {
+        val blurredBg = createBlurredCoverBitmap(photoBitmap, width, height, scaleMultiplier = 1.18f)
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+            alpha = 255
+        }
+        canvas.drawBitmap(blurredBg, 0f, 0f, bgPaint)
+        blurredBg.recycle()
+    }
 
-    val maxMediaHeight = 760f
-    val mediaHeight = if (sourceBitmap != null && sourceBitmap.width > 0) {
-        val aspect = sourceBitmap.height.toFloat() / sourceBitmap.width.toFloat()
-        min(maxMediaHeight, innerWidth * aspect).coerceAtLeast(320f)
+    // 4. Draw translucent atmosphere gradient over the backdrop ONLY
+    val scrimColors = when {
+        isMatte -> intArrayOf(
+            AndroidColor.parseColor("#FF191820"),
+            AndroidColor.parseColor("#FF0B0B0F")
+        )
+        isLight -> intArrayOf(
+            AndroidColor.parseColor("#ADF6F3EC"),
+            AndroidColor.parseColor("#8CF6F3EC"),
+            AndroidColor.parseColor("#C2F0EBE0")
+        )
+        else -> intArrayOf(
+            AndroidColor.parseColor("#8F08080C"),
+            AndroidColor.parseColor("#6B08080C"),
+            AndroidColor.parseColor("#AD08080C")
+        )
+    }
+    val scrimPositions = if (isMatte) floatArrayOf(0f, 1f) else floatArrayOf(0f, 0.5f, 1f)
+    val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = LinearGradient(
+            0f, 0f, 0f, height.toFloat(),
+            scrimColors,
+            scrimPositions,
+            Shader.TileMode.CLAMP
+        )
+    }
+    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), scrimPaint)
+
+    // 5. Calculate dynamic card height based on photo aspect ratio and caption length
+    val cardWidth = 880f
+    val cardLeft = (width - cardWidth) / 2f
+    val cardPad = 36f
+    val innerWidth = cardWidth - (cardPad * 2f) // 808f
+
+    val cardBgColor = if (isLight) AndroidColor.parseColor("#EBFFFFFF") else AndroidColor.parseColor("#E0121218")
+    val cardBorderColor = if (isLight) AndroidColor.parseColor("#1A141418") else AndroidColor.parseColor("#29FFFFFF")
+    val accentColor = if (isLight) AndroidColor.parseColor("#C86D1F") else AndroidColor.parseColor("#F09446")
+    val textColor = if (isLight) AndroidColor.parseColor("#18181B") else AndroidColor.parseColor("#F4F3EF")
+    val mutedTextColor = if (isLight) AndroidColor.parseColor("#C718181B") else AndroidColor.parseColor("#C7F4F3EF")
+    val pillBgColor = if (isLight) AndroidColor.parseColor("#12141418") else AndroidColor.parseColor("#1AFFFFFF")
+
+    val headerHeight = 52f
+    val sectionGap = 26f
+
+    // Fit image frame cleanly to the photo's natural aspect ratio (no sidebars)
+    val imgFrameWidth: Float
+    val imgFrameHeight: Float
+    if (photoBitmap != null && photoBitmap.width > 0 && photoBitmap.height > 0) {
+        val ratio = photoBitmap.height.toFloat() / photoBitmap.width.toFloat()
+        val naturalHeight = innerWidth * ratio
+        if (naturalHeight > 920f) {
+            imgFrameHeight = 920f
+            imgFrameWidth = (920f / ratio).coerceIn(480f, innerWidth)
+        } else {
+            imgFrameWidth = innerWidth
+            imgFrameHeight = naturalHeight.coerceAtLeast(360f)
+        }
     } else {
-        520f
+        imgFrameWidth = 0f
+        imgFrameHeight = 0f
     }
 
     val captionPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (isLight) Color.parseColor("#151517") else Color.parseColor("#F3F2EE")
+        color = textColor
         textSize = 34f
-        typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
     }
-
-    val captionLayout: StaticLayout? = if (post.caption.isNotBlank()) {
-        StaticLayout.Builder.obtain(
-            post.caption, 0, post.caption.length, captionPaint, innerWidth.toInt()
-        )
+    val captionText = post.caption.trim()
+    val captionLayout: StaticLayout? = if (captionText.isNotEmpty()) {
+        StaticLayout.Builder.obtain(captionText, 0, captionText.length, captionPaint, innerWidth.toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setLineSpacing(10f, 1f)
             .setMaxLines(4)
             .setEllipsize(TextUtils.TruncateAt.END)
             .build()
-    } else null
-
-    val headerH = 44f
-    val footerH = 34f
-    val gap = 26f
-    val captionBlockH = if (captionLayout != null) captionLayout.height + gap else 0f
-    val cardHeight = cardPad + headerH + gap + mediaHeight + captionBlockH + gap + footerH + cardPad
-
-    val pillHeight = 52f
-    val totalContentHeight = cardHeight + 36f + pillHeight
-    val cardTop = ((height - totalContentHeight) / 2f).coerceAtLeast(190f)
-    val cardRect = RectF(cardMarginX, cardTop, width - cardMarginX, cardTop + cardHeight)
-
-    // Card Shadow & Background
-    paint.style = Paint.Style.FILL
-    paint.color = if (isLight) Color.argb(238, 255, 255, 255) else Color.argb(228, 18, 18, 24)
-    canvas.drawRoundRect(cardRect, 52f, 52f, paint)
-
-    // Card Border
-    paint.style = Paint.Style.STROKE
-    paint.strokeWidth = 3f
-    paint.color = if (isLight) Color.argb(28, 20, 20, 24) else Color.argb(42, 255, 255, 255)
-    canvas.drawRoundRect(cardRect, 52f, 52f, paint)
-    paint.style = Paint.Style.FILL
-
-    // 3. Card Header: Rec Dot + Alas Label + Time Pill
-    var cursorY = cardTop + cardPad
-    val leftX = cardMarginX + cardPad
-    val rightX = width - cardMarginX - cardPad
-
-    val accentColor = if (isLight) Color.parseColor("#C86D1F") else Color.parseColor("#F09446")
-    paint.color = accentColor
-    canvas.drawCircle(leftX + 10f, cursorY + 20f, 10f, paint)
-
-    val alasPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = accentColor
-        textSize = 31f
-        typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+    } else {
+        null
     }
-    val timeText = post.formatted12h.ifBlank { post.capturedTime }
+
+    val footerHeight = 40f
+
+    var totalCardHeight = cardPad + headerHeight
+    if (imgFrameHeight > 0f) totalCardHeight += sectionGap + imgFrameHeight
+    if (captionLayout != null) totalCardHeight += sectionGap + captionLayout.height.toFloat()
+    totalCardHeight += sectionGap + footerHeight + cardPad
+
+    val badgeGap = 28f
+    val badgeHeight = 54f
+    val totalBlockHeight = totalCardHeight + badgeGap + badgeHeight
+    val cardTop = ((height - totalBlockHeight) / 2f).coerceAtLeast(80f)
+    val cardBottom = cardTop + totalCardHeight
+
+    // 6. Draw card surface & border
+    val cardRect = RectF(cardLeft, cardTop, cardLeft + cardWidth, cardBottom)
+    val cardCorner = 44f
+    val cardFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = cardBgColor
+        style = Paint.Style.FILL
+    }
+    val cardStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = cardBorderColor
+        style = Paint.Style.STROKE
+        strokeWidth = 2.5f
+    }
+    canvas.drawRoundRect(cardRect, cardCorner, cardCorner, cardFillPaint)
+    canvas.drawRoundRect(cardRect, cardCorner, cardCorner, cardStrokePaint)
+
+    var cursorY = cardTop + cardPad
+    val contentLeft = cardLeft + cardPad
+    val contentRight = cardLeft + cardWidth - cardPad
+
+    // 7. Draw Header Row (Orange dot + Alas label on left, Time pill on right)
+    val dotRadius = 11f
+    val headerCenterY = cursorY + (headerHeight / 2f)
+    val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = accentColor
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(contentLeft + dotRadius, headerCenterY, dotRadius, dotPaint)
+
+    val timeStr = post.formatted12h.ifBlank { post.capturedTime }
     val timePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (isLight) Color.parseColor("#27272A") else Color.parseColor("#F3F2EE")
-        textSize = 26f
+        color = textColor
+        textSize = 27f
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
     }
-    val timePillW = timePaint.measureText(timeText) + 44f
-    val timePillRect = RectF(rightX - timePillW, cursorY - 4f, rightX, cursorY + 42f)
-    paint.color = if (isLight) Color.argb(18, 20, 20, 24) else Color.argb(26, 255, 255, 255)
-    canvas.drawRoundRect(timePillRect, 999f, 999f, paint)
-    canvas.drawText(timeText, timePillRect.left + 22f, cursorY + 28f, timePaint)
+    val timeTextWidth = timePaint.measureText(timeStr)
+    val timePillPadH = 22f
+    val timePillWidth = timeTextWidth + (timePillPadH * 2f)
+    val timePillRect = RectF(
+        contentRight - timePillWidth,
+        cursorY + 2f,
+        contentRight,
+        cursorY + headerHeight - 2f
+    )
+    val timePillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = pillBgColor
+        style = Paint.Style.FILL
+    }
+    canvas.drawRoundRect(timePillRect, 999f, 999f, timePillPaint)
 
-    val maxAlasW = (timePillRect.left - (leftX + 34f) - 16f).coerceAtLeast(100f)
-    val ellipsizedAlas = TextUtils.ellipsize(
+    val timeFontMetrics = timePaint.fontMetrics
+    val timeBaseline = timePillRect.centerY() - (timeFontMetrics.ascent + timeFontMetrics.descent) / 2f
+    canvas.drawText(timeStr, timePillRect.left + timePillPadH, timeBaseline, timePaint)
+
+    val labelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = accentColor
+        textSize = 33f
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+    val maxLabelWidth = (timePillRect.left - 18f) - (contentLeft + dotRadius * 2f + 16f)
+    val alasText = TextUtils.ellipsize(
         post.alasLabel.ifBlank { "Alas-Lente" },
-        alasPaint,
-        maxAlasW,
+        labelPaint,
+        maxLabelWidth.coerceAtLeast(120f),
         TextUtils.TruncateAt.END
     ).toString()
-    canvas.drawText(ellipsizedAlas, leftX + 32f, cursorY + 30f, alasPaint)
+    val labelFm = labelPaint.fontMetrics
+    val labelBaseline = headerCenterY - (labelFm.ascent + labelFm.descent) / 2f
+    canvas.drawText(alasText, contentLeft + dotRadius * 2f + 16f, labelBaseline, labelPaint)
 
-    cursorY += headerH + gap
+    cursorY += headerHeight
 
-    // 4. Uncropped Photo Frame
-    val mediaRect = RectF(leftX, cursorY, rightX, cursorY + mediaHeight)
-    paint.color = if (isLight) Color.argb(12, 0, 0, 0) else Color.argb(70, 0, 0, 0)
-    canvas.drawRoundRect(mediaRect, 34f, 34f, paint)
+    // 8. Draw Foreground Photo at 100% FULL OPACITY (alpha = 255)
+    if (photoBitmap != null && imgFrameHeight > 0f) {
+        cursorY += sectionGap
+        val imgLeft = cardLeft + (cardWidth - imgFrameWidth) / 2f
+        val imgRect = RectF(imgLeft, cursorY, imgLeft + imgFrameWidth, cursorY + imgFrameHeight)
+        val imgCorner = 26f
 
-    if (sourceBitmap != null) {
+        val clipPath = Path().apply {
+            addRoundRect(imgRect, imgCorner, imgCorner, Path.Direction.CW)
+        }
+
         canvas.save()
-        val clipPath = Path().apply { addRoundRect(mediaRect, 34f, 34f, Path.Direction.CW) }
         canvas.clipPath(clipPath)
 
-        val scale = min(
-            mediaRect.width() / sourceBitmap.width.toFloat(),
-            mediaRect.height() / sourceBitmap.height.toFloat()
-        )
-        val drawW = sourceBitmap.width * scale
-        val drawH = sourceBitmap.height * scale
-        val drawLeft = mediaRect.centerX() - (drawW / 2f)
-        val drawTop = mediaRect.centerY() - (drawH / 2f)
-        canvas.drawBitmap(
-            sourceBitmap,
-            null,
-            RectF(drawLeft, drawTop, drawLeft + drawW, drawTop + drawH),
-            paint
-        )
+        // Fresh 100% opaque Paint so background/card layers never wash out the photo
+        val crispPhotoPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+            alpha = 255
+            xfermode = null
+            colorFilter = null
+        }
+
+        val srcW = photoBitmap.width.toFloat()
+        val srcH = photoBitmap.height.toFloat()
+        val scale = maxOf(imgRect.width() / srcW, imgRect.height() / srcH)
+        val scaledW = srcW * scale
+        val scaledH = srcH * scale
+        val drawLeft = imgRect.left + (imgRect.width() - scaledW) / 2f
+        val drawTop = imgRect.top + (imgRect.height() - scaledH) / 2f
+        val destRect = RectF(drawLeft, drawTop, drawLeft + scaledW, drawTop + scaledH)
+
+        canvas.drawBitmap(photoBitmap, null, destRect, crispPhotoPaint)
         canvas.restore()
+
+        cursorY += imgFrameHeight
     }
 
-    cursorY += mediaHeight + gap
-
-    // 5. Caption
+    // 9. Draw Caption
     if (captionLayout != null) {
+        cursorY += sectionGap
         canvas.save()
-        canvas.translate(leftX, cursorY)
+        canvas.translate(contentLeft, cursorY)
         captionLayout.draw(canvas)
         canvas.restore()
-        cursorY += captionLayout.height + gap
+        cursorY += captionLayout.height.toFloat()
     }
 
-    // 6. Card Footer (Location + Date)
+    // 10. Draw Footer Row (Location on left, Date on right)
+    cursorY += sectionGap
     val footerPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (isLight) Color.argb(190, 21, 21, 23) else Color.argb(195, 243, 242, 238)
-        textSize = 25f
+        color = mutedTextColor
+        textSize = 26f
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
     }
-    val locText = if (post.location.isNotBlank()) "📍 ${post.location}" else "Alas-Lente Archive"
-    canvas.drawText(locText, leftX, cursorY + 24f, footerPaint)
+    val footerFm = footerPaint.fontMetrics
+    val footerBaseline = (cursorY + footerHeight / 2f) - (footerFm.ascent + footerFm.descent) / 2f
 
-    if (post.dateLabel.isNotBlank()) {
-        val dateW = footerPaint.measureText(post.dateLabel)
-        canvas.drawText(post.dateLabel, rightX - dateW, cursorY + 24f, footerPaint)
+    val dateStr = post.dateLabel.trim()
+    val dateWidth = if (dateStr.isNotEmpty()) footerPaint.measureText(dateStr) else 0f
+    if (dateStr.isNotEmpty()) {
+        canvas.drawText(dateStr, contentRight - dateWidth, footerBaseline, footerPaint)
     }
 
-    // 7. Bottom Brand Pill
-    val pillTop = cardRect.bottom + 36f
+    val rawLoc = if (post.location.isNotBlank()) "📍 ${post.location.trim()}" else "Alas-Lente Archive"
+    val maxLocWidth = (contentRight - dateWidth - 20f) - contentLeft
+    val locStr = TextUtils.ellipsize(
+        rawLoc,
+        footerPaint,
+        maxLocWidth.coerceAtLeast(120f),
+        TextUtils.TruncateAt.END
+    ).toString()
+    canvas.drawText(locStr, contentLeft, footerBaseline, footerPaint)
+
+    // 11. Draw Bottom Brand Pill
     val brandText = "ALAS-LENTE  •  BAWAT ORAS MAY KWENTO"
     val brandPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (isLight) Color.argb(205, 24, 24, 27) else Color.argb(220, 244, 243, 239)
-        textSize = 22f
-        letterSpacing = 0.08f
-        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        color = mutedTextColor
+        textSize = 23f
+        letterSpacing = 0.06f
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
     }
     val brandTextW = brandPaint.measureText(brandText)
-    val pillW = brandTextW + 68f
-    val pillLeft = (width - pillW) / 2f
-    val pillRect = RectF(pillLeft, pillTop, pillLeft + pillW, pillTop + pillHeight)
+    val brandPillW = brandTextW + 56f
+    val brandPillLeft = (width - brandPillW) / 2f
+    val brandPillTop = cardBottom + badgeGap
+    val brandPillRect = RectF(brandPillLeft, brandPillTop, brandPillLeft + brandPillW, brandPillTop + badgeHeight)
 
-    paint.color = if (isLight) Color.argb(200, 255, 255, 255) else Color.argb(170, 14, 14, 19)
-    canvas.drawRoundRect(pillRect, 999f, 999f, paint)
-    paint.style = Paint.Style.STROKE
-    paint.strokeWidth = 2f
-    paint.color = if (isLight) Color.argb(26, 20, 20, 24) else Color.argb(38, 255, 255, 255)
-    canvas.drawRoundRect(pillRect, 999f, 999f, paint)
-    paint.style = Paint.Style.FILL
+    val brandPillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = if (isLight) AndroidColor.parseColor("#C7FFFFFF") else AndroidColor.parseColor("#A60E0E13")
+        style = Paint.Style.FILL
+    }
+    canvas.drawRoundRect(brandPillRect, 999f, 999f, brandPillPaint)
+    canvas.drawRoundRect(brandPillRect, 999f, 999f, cardStrokePaint)
 
-    canvas.drawText(brandText, pillLeft + 34f, pillTop + 34f, brandPaint)
+    val brandFm = brandPaint.fontMetrics
+    val brandBaseline = brandPillRect.centerY() - (brandFm.ascent + brandFm.descent) / 2f
+    canvas.drawText(brandText, brandPillRect.left + 28f, brandBaseline, brandPaint)
 
-    bitmap
+    output
 }
 
-private fun fastBoxBlur(src: Bitmap, radius: Int): Bitmap {
-    val w = src.width
-    val h = src.height
-    val pixels = IntArray(w * h)
-    src.getPixels(pixels, 0, w, 0, 0, w, h)
-    val temp = IntArray(w * h)
+private fun createBlurredCoverBitmap(
+    source: Bitmap,
+    targetWidth: Int,
+    targetHeight: Int,
+    scaleMultiplier: Float
+): Bitmap {
+    val smallW = (targetWidth / 24).coerceAtLeast(24)
+    val smallH = (targetHeight / 24).coerceAtLeast(42)
+    val tiny = Bitmap.createBitmap(smallW, smallH, Bitmap.Config.ARGB_8888)
+    val tinyCanvas = Canvas(tiny)
 
-    repeat(2) {
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                var r = 0
-                var g = 0
-                var b = 0
-                var count = 0
-                for (dx in -radius..radius) {
-                    val nx = (x + dx).coerceIn(0, w - 1)
-                    val c = pixels[y * w + nx]
-                    r += Color.red(c)
-                    g += Color.green(c)
-                    b += Color.blue(c)
-                    count++
-                }
-                temp[y * w + x] = Color.rgb(r / count, g / count, b / count)
-            }
-        }
-        for (x in 0 until w) {
-            for (y in 0 until h) {
-                var r = 0
-                var g = 0
-                var b = 0
-                var count = 0
-                for (dy in -radius..radius) {
-                    val ny = (y + dy).coerceIn(0, h - 1)
-                    val c = temp[ny * w + x]
-                    r += Color.red(c)
-                    g += Color.green(c)
-                    b += Color.blue(c)
-                    count++
-                }
-                pixels[y * w + x] = Color.rgb(r / count, g / count, b / count)
-            }
-        }
-    }
+    val srcW = source.width.toFloat()
+    val srcH = source.height.toFloat()
+    val scale = maxOf(smallW / srcW, smallH / srcH) * scaleMultiplier
+    val drawW = srcW * scale
+    val drawH = srcH * scale
+    val left = (smallW - drawW) / 2f
+    val top = (smallH - drawH) / 2f
 
-    return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply {
-        setPixels(pixels, 0, w, 0, 0, w, h)
-    }
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    tinyCanvas.drawBitmap(source, null, RectF(left, top, left + drawW, top + drawH), paint)
+
+    val blurred = Bitmap.createScaledBitmap(tiny, targetWidth, targetHeight, true)
+    tiny.recycle()
+    return blurred
 }
 
 suspend fun saveStoryToGallery(context: Context, bitmap: Bitmap, postId: String): Boolean =
     withContext(Dispatchers.IO) {
         try {
-            val filename = "alas-lente-story-$postId-${System.currentTimeMillis()}.png"
+            val filename = "AlasLente_${postId}_${System.currentTimeMillis()}.png"
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, filename)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(
-                        MediaStore.Images.Media.RELATIVE_PATH,
-                        "${Environment.DIRECTORY_PICTURES}/Alas-Lente"
-                    )
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Alas-Lente")
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
             }
+
             val resolver = context.contentResolver
-            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-                ?: return@withContext false
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@withContext false
 
             resolver.openOutputStream(uri)?.use { out ->
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-            }
+            } ?: return@withContext false
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 values.clear()
                 values.put(MediaStore.Images.Media.IS_PENDING, 0)
@@ -434,27 +518,34 @@ suspend fun saveStoryToGallery(context: Context, bitmap: Bitmap, postId: String)
         }
     }
 
-suspend fun shareStoryToApps(context: Context, bitmap: Bitmap, post: MomentPost) {
-    // 1. Copy exact post permalink to clipboard for IG Story Link sticker
-    val postUrl = "$SITE_BASE_URL/?post=${post.id}"
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("Alas-Lente Moment", postUrl))
+fun shareStoryToApps(context: Context, bitmap: Bitmap, post: MomentPost) {
+    // 1. Copy exact post link to clipboard automatically
+    val postLink = "$SITE_BASE_URL/?post=${post.id}"
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    clipboard?.setPrimaryClip(ClipData.newPlainText("Alas-Lente Post Link", postLink))
 
-    // 2. Write 1080x1920 PNG to cache and share via Android Share Sheet
-    val fileUri = withContext(Dispatchers.IO) {
-        val dir = File(context.cacheDir, "shared_stories").apply { mkdirs() }
-        val file = File(dir, "alas-lente-story-${post.id}.png")
-        FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-        }
-        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    // 2. Write PNG to cache & launch Android Share Sheet
+    val shareDir = File(context.cacheDir, "shared_stories").apply { mkdirs() }
+    val imageFile = File(shareDir, "story_${post.id}_${System.currentTimeMillis()}.png")
+    imageFile.outputStream().use { out ->
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
     }
+
+    val contentUri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        imageFile
+    )
 
     val shareIntent = Intent(Intent.ACTION_SEND).apply {
         type = "image/png"
-        putExtra(Intent.EXTRA_STREAM, fileUri)
-        putExtra(Intent.EXTRA_TEXT, postUrl)
+        putExtra(Intent.EXTRA_STREAM, contentUri)
+        putExtra(Intent.EXTRA_TEXT, postLink)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.startActivity(Intent.createChooser(shareIntent, "Share Alas-Lente Story"))
+
+    val chooser = Intent.createChooser(shareIntent, "Share Alas-Lente Story").apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(chooser)
 }

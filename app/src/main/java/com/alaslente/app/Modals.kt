@@ -452,7 +452,7 @@ fun LightboxDialog(
                     )
                 } else {
                     AsyncImage(
-                        model = activeItem.mediaUrl,
+                        model = activeItem.mediaUrl.toOptimizedImageUrl(1600),
                         contentDescription = post.caption,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
@@ -550,7 +550,7 @@ fun LightboxDialog(
                             itemsIndexed(items) { idx, item ->
                                 val active = idx == currentIndex
                                 AsyncImage(
-                                    model = item.thumbnailUrl.ifBlank { item.mediaUrl },
+                                    model = item.thumbnailUrl.ifBlank { item.mediaUrl }.toOptimizedImageUrl(300),
                                     contentDescription = null,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
@@ -657,7 +657,7 @@ fun StoryModalDialog(
         ) {
             if (!isMatte && imgUrl.isNotBlank()) {
                 AsyncImage(
-                    model = imgUrl,
+                    model = imgUrl.toOptimizedImageUrl(600),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -764,7 +764,7 @@ fun StoryModalDialog(
                             contentAlignment = Alignment.Center
                         ) {
                             AsyncImage(
-                                model = imgUrl,
+                                model = imgUrl.toOptimizedImageUrl(1080),
                                 contentDescription = null,
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier

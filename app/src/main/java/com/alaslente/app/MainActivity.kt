@@ -34,6 +34,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
+import coil3.disk.DiskCache
+import coil3.disk.directory
+import coil3.memory.MemoryCache
+import coil3.request.crossfade
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -52,6 +58,22 @@ private val FILTER_PERIODS = listOf(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SingletonImageLoader.setSafe { ctx ->
+            ImageLoader.Builder(ctx)
+                .memoryCache {
+                    MemoryCache.Builder()
+                        .maxSizePercent(ctx, 0.25)
+                        .build()
+                }
+                .diskCache {
+                    DiskCache.Builder()
+                        .directory(ctx.cacheDir.resolve("alas_image_cache"))
+                        .maxSizeBytes(250L * 1024 * 1024)
+                        .build()
+                }
+                .crossfade(150)
+                .build()
+        }
         enableEdgeToEdge()
         setContent {
             AlasLenteApp()
@@ -553,7 +575,8 @@ private fun ViewfinderPostCard(
                     modifier = Modifier.fillMaxSize()
                 ) { page ->
                     val item = items[page]
-                    val displayUrl = if (item.mediaType == "video") item.thumbnailUrl else item.mediaUrl
+                    val rawUrl = if (item.mediaType == "video") item.thumbnailUrl else item.mediaUrl
+                    val displayUrl = rawUrl.toOptimizedImageUrl(1080)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
