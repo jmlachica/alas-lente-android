@@ -1,14 +1,6 @@
 package com.alaslente.app
 
-import android.content.Context
-import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas as AndroidCanvas
-import android.graphics.Paint
-import android.graphics.Rect
-import android.graphics.Typeface
 import android.net.Uri
-import android.os.Environment
 import android.widget.MediaController
 import android.widget.Toast
 import android.widget.VideoView
@@ -63,20 +55,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.content.FileProvider
-import coil3.ImageLoader
 import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
-import coil3.request.allowHardware
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 import java.time.LocalDate
 import java.time.YearMonth
 import java.util.UUID
@@ -133,7 +117,8 @@ fun WebsiteButton(
     isPrimary: Boolean = false,
     enabled: Boolean = true,
     fontSizeSp: Int = 12,
-    mono: Boolean = false
+    mono: Boolean = false,
+    verticalPadding: Dp = 0.dp
 ) {
     val bgColor = when {
         !enabled -> colors.surfaceAlt.copy(alpha = 0.55f)
@@ -147,14 +132,19 @@ fun WebsiteButton(
         else -> colors.text
     }
 
+    val sizingModifier = if (verticalPadding > 0.dp) {
+        modifier.defaultMinSize(minHeight = 34.dp)
+    } else {
+        modifier.height(34.dp)
+    }
+
     Box(
-        modifier = modifier
-            .height(34.dp)
+        modifier = sizingModifier
             .clip(RoundedCornerShape(8.dp))
             .background(bgColor)
             .border(1.dp, borderColor, RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = 10.dp, vertical = verticalPadding),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -176,7 +166,8 @@ fun WebsiteButton(
     modifier: Modifier = Modifier,
     isPrimary: Boolean = false,
     enabled: Boolean = true,
-    fontSizeStr: String = "12"
+    fontSizeStr: String,
+    verticalPadding: Dp = 0.dp
 ) {
     WebsiteButton(
         text = text,
@@ -185,7 +176,8 @@ fun WebsiteButton(
         modifier = modifier,
         isPrimary = isPrimary,
         enabled = enabled,
-        fontSizeSp = fontSizeStr.toIntOrNull() ?: 12
+        fontSizeSp = fontSizeStr.toIntOrNull() ?: 12,
+        verticalPadding = verticalPadding
     )
 }
 
@@ -1878,236 +1870,6 @@ private fun DatePickerPopupDialog(
     }
 }
 
-suspend fun renderStoryBitmap(
-    context: Context,
-    post: MomentPost,
-    slideIndex: Int,
-    style: StoryStyle
-): Bitmap = withContext(Dispatchers.IO) {
-    val width = 1080
-    val height = 1920
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = AndroidCanvas(bitmap)
-
-    val isLight = style == StoryStyle.AMBIENT_LIGHT
-    val isMatte = style == StoryStyle.MATTE_DARK
-
-    val bgPaint = Paint().apply {
-        color = when (style) {
-            StoryStyle.AMBIENT_DARK -> android.graphics.Color.parseColor("#0D0D12")
-            StoryStyle.AMBIENT_LIGHT -> android.graphics.Color.parseColor("#EBE6DA")
-            StoryStyle.MATTE_DARK -> android.graphics.Color.parseColor("#0B0B0F")
-        }
-    }
-    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
-
-    val items = post.resolvedMediaItems()
-    val activeItem = items.getOrNull(slideIndex) ?: items.firstOrNull()
-    val imgUrl = activeItem?.thumbnailUrl?.ifBlank { activeItem.mediaUrl }.orEmpty()
-
-    var photoBmp: Bitmap? = null
-    if (imgUrl.isNotBlank()) {
-        try {
-            val loader = ImageLoader(context)
-            val req = ImageRequest.Builder(context)
-                .data(imgUrl)
-                .allowHardware(false)
-                .build()
-            val result = loader.execute(req)
-            photoBmp = (result.image as? coil3.BitmapImage)?.bitmap
-        } catch (_: Exception) {}
-    }
-
-    val cardWidth = (width * 0.86f).toInt()
-    val cardHeight = 1380
-    val cardLeft = (width - cardWidth) / 2
-    val cardTop = 150
-
-    val cardBgColor = if (isLight) android.graphics.Color.parseColor("#EBFFFFFF") else android.graphics.Color.parseColor("#E0121218")
-    val cardPaint = Paint().apply {
-        color = cardBgColor
-        isAntiAlias = true
-        style = Paint.Style.FILL
-    }
-    val cardRect = Rect(cardLeft, cardTop, cardLeft + cardWidth, cardTop + cardHeight)
-    canvas.drawRoundRect(cardRect.toRectF(), 42f, 42f, cardPaint)
-
-    val cardBorderPaint = Paint().apply {
-        color = if (isLight) android.graphics.Color.parseColor("#1A141418") else android.graphics.Color.parseColor("#29FFFFFF")
-        isAntiAlias = true
-        style = Paint.Style.STROKE
-        strokeWidth = 3f
-    }
-    canvas.drawRoundRect(cardRect.toRectF(), 42f, 42f, cardBorderPaint)
-
-    val contentLeft = cardLeft + 48
-    val contentRight = cardLeft + cardWidth - 48
-    var cursorY = cardTop + 54
-
-    val accentColor = if (isLight) android.graphics.Color.parseColor("#C86D1F") else android.graphics.Color.parseColor("#F09446")
-    val textColor = if (isLight) android.graphics.Color.parseColor("#18181B") else android.graphics.Color.parseColor("#F4F3EF")
-    val mutedColor = if (isLight) android.graphics.Color.parseColor("#66666E") else android.graphics.Color.parseColor("#A1A1AA")
-
-    val dotPaint = Paint().apply { color = accentColor; isAntiAlias = true }
-    canvas.drawCircle((contentLeft + 12).toFloat(), (cursorY + 12).toFloat(), 10f, dotPaint)
-
-    val labelPaint = Paint().apply {
-        color = accentColor
-        textSize = 34f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        isAntiAlias = true
-    }
-    canvas.drawText(post.alasLabel.ifBlank { "Alas-Lente" }, (contentLeft + 40).toFloat(), (cursorY + 24).toFloat(), labelPaint)
-
-    val timeText = post.formatted12h.ifBlank { post.capturedTime }
-    val timePaint = Paint().apply {
-        color = textColor
-        textSize = 30f
-        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-        isAntiAlias = true
-    }
-    val timeWidth = timePaint.measureText(timeText)
-    canvas.drawText(timeText, (contentRight - timeWidth - 24).toFloat(), (cursorY + 24).toFloat(), timePaint)
-    cursorY += 72
-
-    val photoBoxHeight = 650
-    val photoBoxRect = Rect(contentLeft, cursorY, contentRight, cursorY + photoBoxHeight)
-    val photoBoxBg = Paint().apply {
-        color = if (isLight) android.graphics.Color.parseColor("#0A000000") else android.graphics.Color.parseColor("#40000000")
-        isAntiAlias = true
-    }
-    canvas.drawRoundRect(photoBoxRect.toRectF(), 24f, 24f, photoBoxBg)
-
-    if (photoBmp != null) {
-        val srcW = photoBmp.width.toFloat()
-        val srcH = photoBmp.height.toFloat()
-        val dstW = (contentRight - contentLeft).toFloat()
-        val dstH = photoBoxHeight.toFloat()
-        val scale = minOf(dstW / srcW, dstH / srcH)
-        val scaledW = srcW * scale
-        val scaledH = srcH * scale
-        val left = contentLeft + (dstW - scaledW) / 2f
-        val top = cursorY + (dstH - scaledH) / 2f
-        canvas.drawBitmap(photoBmp, null, android.graphics.RectF(left, top, left + scaledW, top + scaledH), Paint(Paint.FILTER_BITMAP_FLAG))
-    }
-    cursorY += photoBoxHeight + 42
-
-    if (post.caption.isNotBlank()) {
-        val captionPaint = Paint().apply {
-            color = textColor
-            textSize = 34f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-            isAntiAlias = true
-        }
-        val lines = wrapTextToLines(post.caption, captionPaint, (contentRight - contentLeft).toFloat())
-        for (line in lines.take(3)) {
-            canvas.drawText(line, contentLeft.toFloat(), cursorY.toFloat(), captionPaint)
-            cursorY += 46
-        }
-        cursorY += 16
-    }
-
-    val footerPaint = Paint().apply {
-        color = mutedColor
-        textSize = 28f
-        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
-        isAntiAlias = true
-    }
-    val locText = if (post.location.isNotBlank()) "📍 ${post.location}" else "Alas-Lente Archive"
-    canvas.drawText(locText, contentLeft.toFloat(), cursorY.toFloat(), footerPaint)
-
-    if (post.dateLabel.isNotBlank()) {
-        val dateW = footerPaint.measureText(post.dateLabel)
-        canvas.drawText(post.dateLabel, (contentRight - dateW).toFloat(), cursorY.toFloat(), footerPaint)
-    }
-
-    val brandPillY = 1660f
-    val brandText = "ALAS-LENTE  •  BAWAT ORAS MAY KWENTO"
-    val brandPaint = Paint().apply {
-        color = textColor
-        textSize = 26f
-        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-        isAntiAlias = true
-    }
-    val brandW = brandPaint.measureText(brandText)
-    val pillPadX = 36f
-    val pillPadY = 18f
-    val pillRect = android.graphics.RectF(
-        (width / 2) - (brandW / 2) - pillPadX,
-        brandPillY - 32f,
-        (width / 2) + (brandW / 2) + pillPadX,
-        brandPillY + pillPadY + 14f
-    )
-    val pillBg = Paint().apply {
-        color = if (isLight) android.graphics.Color.parseColor("#C7FFFFFF") else android.graphics.Color.parseColor("#A60E0E13")
-        isAntiAlias = true
-    }
-    canvas.drawRoundRect(pillRect, 32f, 32f, pillBg)
-    canvas.drawText(brandText, (width / 2) - (brandW / 2), brandPillY + 4f, brandPaint)
-
-    bitmap
-}
-
-private fun wrapTextToLines(text: String, paint: Paint, maxWidth: Float): List<String> {
-    val lines = mutableListOf<String>()
-    val paragraphs = text.split("\n")
-    for (paragraph in paragraphs) {
-        val words = paragraph.split(" ")
-        var currentLine = ""
-        for (word in words) {
-            val testLine = if (currentLine.isEmpty()) word else "$currentLine $word"
-            if (paint.measureText(testLine) <= maxWidth) {
-                currentLine = testLine
-            } else {
-                if (currentLine.isNotEmpty()) lines.add(currentLine)
-                currentLine = word
-            }
-        }
-        if (currentLine.isNotEmpty()) lines.add(currentLine)
-    }
-    return lines
-}
-
-private fun android.graphics.Rect.toRectF() = android.graphics.RectF(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
-
-suspend fun saveStoryToGallery(context: Context, bitmap: Bitmap, postId: String): Boolean = withContext(Dispatchers.IO) {
-    try {
-        val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Alas-Lente")
-        if (!dir.exists()) dir.mkdirs()
-        val file = File(dir, "story_${postId}_${System.currentTimeMillis()}.png")
-        FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-        }
-        val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(file))
-        context.sendBroadcast(mediaScanIntent)
-        true
-    } catch (_: Exception) {
-        false
-    }
-}
-
-fun shareStoryToApps(context: Context, bitmap: Bitmap, post: MomentPost) {
-    try {
-        val dir = File(context.cacheDir, "shares")
-        if (!dir.exists()) dir.mkdirs()
-        val file = File(dir, "story_share_${System.currentTimeMillis()}.png")
-        FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-        }
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "image/png"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_TEXT, "$SITE_BASE_URL/?post=${post.id}")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(Intent.createChooser(shareIntent, "Share Story to..."))
-    } catch (e: Exception) {
-        Toast.makeText(context, "Could not share story: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-    }
-}
-
 private fun Modifier.dashedBorder(width: Dp, color: Color, cornerRadius: Dp): Modifier =
     this.then(
         Modifier.drawWithContent {
@@ -2129,8 +1891,20 @@ private fun ClockVectorIcon(color: Color) {
     Canvas(modifier = Modifier.size(15.dp)) {
         val stroke = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
         drawCircle(color = color, style = stroke)
-        drawLine(color = color, start = center, end = Offset(center.x, center.y - size.height * 0.25f), strokeWidth = 1.6.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(color = color, start = center, end = Offset(center.x + size.width * 0.2f, center.y + size.height * 0.1f), strokeWidth = 1.6.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(
+            color = color,
+            start = center,
+            end = Offset(center.x, center.y - size.height * 0.25f),
+            strokeWidth = 1.6.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = center,
+            end = Offset(center.x + size.width * 0.2f, center.y + size.height * 0.1f),
+            strokeWidth = 1.6.dp.toPx(),
+            cap = StrokeCap.Round
+        )
     }
 }
 
@@ -2146,8 +1920,25 @@ private fun CalendarVectorIcon(color: Color) {
             cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
             style = stroke
         )
-        drawLine(color = color, start = Offset(size.width * 0.3f, 0f), end = Offset(size.width * 0.3f, size.height * 0.28f), strokeWidth = 1.6.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(color = color, start = Offset(size.width * 0.7f, 0f), end = Offset(size.width * 0.7f, size.height * 0.28f), strokeWidth = 1.6.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(color = color, start = Offset(0f, size.height * 0.44f), end = Offset(size.width, size.height * 0.44f), strokeWidth = 1.5.dp.toPx())
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.3f, 0f),
+            end = Offset(size.width * 0.3f, size.height * 0.28f),
+            strokeWidth = 1.6.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.7f, 0f),
+            end = Offset(size.width * 0.7f, size.height * 0.28f),
+            strokeWidth = 1.6.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(0f, size.height * 0.44f),
+            end = Offset(size.width, size.height * 0.44f),
+            strokeWidth = 1.5.dp.toPx()
+        )
     }
 }
