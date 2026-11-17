@@ -222,13 +222,34 @@ fun AlasLenteApp() {
                                 letterSpacing = (-0.3).sp
                             )
                         }
-                        Text(
-                            text = liveClockText,
-                            color = colors.textMuted,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            letterSpacing = 0.4.sp
-                        )
+                        
+                        val clockParts = liveClockText
+                            .split("•", "·")
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                        val alasPart = clockParts.getOrNull(0).orEmpty()
+                        val timePart = clockParts.getOrNull(1).orEmpty()
+
+                        if (alasPart.isNotEmpty()) {
+                            Text(
+                                text = alasPart,
+                                color = colors.textMuted,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 0.4.sp,
+                                maxLines = 1
+                            )
+                        }
+                        if (timePart.isNotEmpty()) {
+                            Text(
+                                text = timePart,
+                                color = colors.textMuted,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 0.4.sp,
+                                maxLines = 1
+                            )
+                        }
                     }
 
                     Row(
