@@ -81,7 +81,6 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.util.UUID
 
-// Reusable Website-Styled Modal Shell (.modal-backdrop + .modal-box)
 @Composable
 fun WebsiteModalShell(
     colors: AlasColors,
@@ -125,7 +124,6 @@ fun WebsiteModalShell(
     }
 }
 
-// Reusable Uniform Button with fixed height to prevent vertical staggering
 @Composable
 fun WebsiteButton(
     text: String,
@@ -170,7 +168,27 @@ fun WebsiteButton(
     }
 }
 
-// Reusable Website Input matching .form-group input / textarea
+@Composable
+fun WebsiteButton(
+    text: String,
+    colors: AlasColors,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isPrimary: Boolean = false,
+    enabled: Boolean = true,
+    fontSizeStr: String = "12"
+) {
+    WebsiteButton(
+        text = text,
+        colors = colors,
+        onClick = onClick,
+        modifier = modifier,
+        isPrimary = isPrimary,
+        enabled = enabled,
+        fontSizeSp = fontSizeStr.toIntOrNull() ?: 12
+    )
+}
+
 @Composable
 fun WebsiteTextInput(
     value: String,
@@ -234,7 +252,6 @@ fun WebsiteTextInput(
     }
 }
 
-// 1. Full-Screen Lightbox Viewer with Zoom, Pan & Video Support
 @Composable
 fun LightboxDialog(
     post: MomentPost,
@@ -564,7 +581,6 @@ fun LightboxDialog(
     }
 }
 
-// 2. True 9:16 Story Modal (Title changed to "Story", uniform button heights)
 @Composable
 fun StoryModalDialog(
     post: MomentPost,
@@ -587,7 +603,6 @@ fun StoryModalDialog(
     val imgUrl = activeItem?.thumbnailUrl?.ifBlank { activeItem.mediaUrl }.orEmpty()
 
     WebsiteModalShell(colors = colors, maxWidth = 380.dp, onDismiss = onDismiss) {
-        // Modal Top Row with perfectly uniform 34.dp height buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -630,7 +645,6 @@ fun StoryModalDialog(
             }
         }
 
-        // Live Interactive 9:16 Story Canvas Preview
         val isLight = storyStyle == StoryStyle.AMBIENT_LIGHT
         val isMatte = storyStyle == StoryStyle.MATTE_DARK
         val canvasBg = when (storyStyle) {
@@ -822,7 +836,6 @@ fun StoryModalDialog(
             }
         }
 
-        // Action Buttons Row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -886,7 +899,6 @@ fun StoryModalDialog(
     }
 }
 
-// 3. Darkroom Admin Login Modal
 @Composable
 fun LoginModalDialog(
     colors: AlasColors,
@@ -1003,29 +1015,6 @@ fun LoginModalDialog(
     }
 }
 
-// Overload helper for WebsiteButton with String font size
-@Composable
-fun WebsiteButton(
-    text: String,
-    colors: AlasColors,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    isPrimary: Boolean = false,
-    enabled: Boolean = true,
-    fontSizeStr: String = "12"
-) {
-    WebsiteButton(
-        text = text,
-        colors = colors,
-        onClick = onClick,
-        modifier = modifier,
-        isPrimary = isPrimary,
-        enabled = enabled,
-        fontSizeSp = fontSizeStr.toIntOrNull() ?: 12
-    )
-}
-
-// 4. Admin Publish / Edit Moment Modal
 @Composable
 fun UploadEditModalDialog(
     editingPost: MomentPost?,
@@ -1889,7 +1878,6 @@ private fun DatePickerPopupDialog(
     }
 }
 
-// 4. Robust Native Android 2D Canvas Story Renderer (1080x1920) with Zero Text/Pill Clipping
 suspend fun renderStoryBitmap(
     context: Context,
     post: MomentPost,
@@ -1904,7 +1892,6 @@ suspend fun renderStoryBitmap(
     val isLight = style == StoryStyle.AMBIENT_LIGHT
     val isMatte = style == StoryStyle.MATTE_DARK
 
-    // 1. Background Fill
     val bgPaint = Paint().apply {
         color = when (style) {
             StoryStyle.AMBIENT_DARK -> android.graphics.Color.parseColor("#0D0D12")
@@ -1914,7 +1901,6 @@ suspend fun renderStoryBitmap(
     }
     canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
 
-    // 2. Load Photo Bitmap via Coil 3
     val items = post.resolvedMediaItems()
     val activeItem = items.getOrNull(slideIndex) ?: items.firstOrNull()
     val imgUrl = activeItem?.thumbnailUrl?.ifBlank { activeItem.mediaUrl }.orEmpty()
@@ -1932,7 +1918,6 @@ suspend fun renderStoryBitmap(
         } catch (_: Exception) {}
     }
 
-    // 3. Draw Centered Card Container
     val cardWidth = (width * 0.86f).toInt()
     val cardHeight = 1380
     val cardLeft = (width - cardWidth) / 2
@@ -1963,14 +1948,13 @@ suspend fun renderStoryBitmap(
     val textColor = if (isLight) android.graphics.Color.parseColor("#18181B") else android.graphics.Color.parseColor("#F4F3EF")
     val mutedColor = if (isLight) android.graphics.Color.parseColor("#66666E") else android.graphics.Color.parseColor("#A1A1AA")
 
-    // Header: Badge + Time
     val dotPaint = Paint().apply { color = accentColor; isAntiAlias = true }
     canvas.drawCircle((contentLeft + 12).toFloat(), (cursorY + 12).toFloat(), 10f, dotPaint)
 
     val labelPaint = Paint().apply {
         color = accentColor
         textSize = 34f
-        isTypeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         isAntiAlias = true
     }
     canvas.drawText(post.alasLabel.ifBlank { "Alas-Lente" }, (contentLeft + 40).toFloat(), (cursorY + 24).toFloat(), labelPaint)
@@ -1979,14 +1963,13 @@ suspend fun renderStoryBitmap(
     val timePaint = Paint().apply {
         color = textColor
         textSize = 30f
-        isTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         isAntiAlias = true
     }
     val timeWidth = timePaint.measureText(timeText)
     canvas.drawText(timeText, (contentRight - timeWidth - 24).toFloat(), (cursorY + 24).toFloat(), timePaint)
     cursorY += 72
 
-    // Photo Box Inside Card
     val photoBoxHeight = 650
     val photoBoxRect = Rect(contentLeft, cursorY, contentRight, cursorY + photoBoxHeight)
     val photoBoxBg = Paint().apply {
@@ -2009,12 +1992,11 @@ suspend fun renderStoryBitmap(
     }
     cursorY += photoBoxHeight + 42
 
-    // Caption (Wrapped cleanly)
     if (post.caption.isNotBlank()) {
         val captionPaint = Paint().apply {
             color = textColor
             textSize = 34f
-            isTypeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             isAntiAlias = true
         }
         val lines = wrapTextToLines(post.caption, captionPaint, (contentRight - contentLeft).toFloat())
@@ -2025,11 +2007,10 @@ suspend fun renderStoryBitmap(
         cursorY += 16
     }
 
-    // Footer: Location & Date
     val footerPaint = Paint().apply {
         color = mutedColor
         textSize = 28f
-        isTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
         isAntiAlias = true
     }
     val locText = if (post.location.isNotBlank()) "📍 ${post.location}" else "Alas-Lente Archive"
@@ -2040,13 +2021,12 @@ suspend fun renderStoryBitmap(
         canvas.drawText(post.dateLabel, (contentRight - dateW).toFloat(), cursorY.toFloat(), footerPaint)
     }
 
-    // Bottom Brand Pill (Positioned perfectly inside canvas with safety margin)
     val brandPillY = 1660f
     val brandText = "ALAS-LENTE  •  BAWAT ORAS MAY KWENTO"
     val brandPaint = Paint().apply {
         color = textColor
         textSize = 26f
-        isTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         isAntiAlias = true
     }
     val brandW = brandPaint.measureText(brandText)
@@ -2068,7 +2048,6 @@ suspend fun renderStoryBitmap(
     bitmap
 }
 
-// Helper: Word Wrap for Native Canvas Text
 private fun wrapTextToLines(text: String, paint: Paint, maxWidth: Float): List<String> {
     val lines = mutableListOf<String>()
     val paragraphs = text.split("\n")
@@ -2091,8 +2070,7 @@ private fun wrapTextToLines(text: String, paint: Paint, maxWidth: Float): List<S
 
 private fun android.graphics.Rect.toRectF() = android.graphics.RectF(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
 
-// Save Story Bitmap to Gallery
-private suspend fun saveStoryToGallery(context: Context, bitmap: Bitmap, postId: String): Boolean = withContext(Dispatchers.IO) {
+suspend fun saveStoryToGallery(context: Context, bitmap: Bitmap, postId: String): Boolean = withContext(Dispatchers.IO) {
     try {
         val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Alas-Lente")
         if (!dir.exists()) dir.mkdirs()
@@ -2108,8 +2086,7 @@ private suspend fun saveStoryToGallery(context: Context, bitmap: Bitmap, postId:
     }
 }
 
-// Share Story Bitmap and Post Link to Apps (Instagram, Messenger, etc.)
-private fun shareStoryToApps(context: Context, bitmap: Bitmap, post: MomentPost) {
+fun shareStoryToApps(context: Context, bitmap: Bitmap, post: MomentPost) {
     try {
         val dir = File(context.cacheDir, "shares")
         if (!dir.exists()) dir.mkdirs()
