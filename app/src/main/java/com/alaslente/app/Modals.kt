@@ -581,7 +581,7 @@ fun StoryModalDialog(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Story / MyDay (9:16)",
+                text = "Story",
                 color = colors.text,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
