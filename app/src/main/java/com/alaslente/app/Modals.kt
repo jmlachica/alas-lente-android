@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
@@ -33,6 +34,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -618,7 +620,7 @@ fun StoryModalDialog(
             }
         }
 
-        // Live Interactive 9:16 Story Canvas Preview (Instantaneous switching)
+        // Live Interactive 9:16 Story Canvas Preview
         val isLight = storyStyle == StoryStyle.AMBIENT_LIGHT
         val isMatte = storyStyle == StoryStyle.MATTE_DARK
         val canvasBg = when (storyStyle) {
@@ -637,7 +639,6 @@ fun StoryModalDialog(
                 .background(canvasBg),
             contentAlignment = Alignment.Center
         ) {
-            // 1. Atmospheric Blurred Backdrop
             if (!isMatte && imgUrl.isNotBlank()) {
                 AsyncImage(
                     model = imgUrl,
@@ -650,7 +651,6 @@ fun StoryModalDialog(
                 )
             }
 
-            // 2. Gradient Tint Overlay
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -677,7 +677,6 @@ fun StoryModalDialog(
                     )
             )
 
-            // 3. Safe-Zone Repost Card + Brand Pill
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -699,7 +698,6 @@ fun StoryModalDialog(
                         .padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
-                    // Header
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -741,7 +739,6 @@ fun StoryModalDialog(
                         }
                     }
 
-                    // Uncropped Photo Frame
                     if (imgUrl.isNotBlank()) {
                         Box(
                             modifier = Modifier
@@ -761,7 +758,6 @@ fun StoryModalDialog(
                         }
                     }
 
-                    // Caption
                     if (post.caption.isNotBlank()) {
                         Text(
                             text = post.caption,
@@ -773,7 +769,6 @@ fun StoryModalDialog(
                         )
                     }
 
-                    // Footer
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -799,7 +794,6 @@ fun StoryModalDialog(
                     }
                 }
 
-                // Bottom Attribution Pill
                 Box(
                     modifier = Modifier
                         .clip(CircleShape)
@@ -920,7 +914,6 @@ fun LoginModalDialog(
             )
         }
 
-        // Email
         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text("Email", color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             WebsiteTextInput(
@@ -931,7 +924,6 @@ fun LoginModalDialog(
             )
         }
 
-        // Password
         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text("Password", color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             WebsiteTextInput(
@@ -1097,7 +1089,6 @@ fun UploadEditModalDialog(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(13.dp)
         ) {
-            // Modal Top
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1144,12 +1135,11 @@ fun UploadEditModalDialog(
                 )
             }
 
-            // 2. Time Taken & 3. Date Taken (Unified .picker-field controls)
+            // 2. Time Taken & 3. Date Taken
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Time Taken Field
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(5.dp)
@@ -1192,7 +1182,6 @@ fun UploadEditModalDialog(
                     }
                 }
 
-                // Date Taken Field
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(5.dp)
@@ -1287,7 +1276,6 @@ fun UploadEditModalDialog(
                     )
                 }
 
-                // Dashed Upload Dropzone matching .upload-dropzone
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1315,7 +1303,6 @@ fun UploadEditModalDialog(
                     }
                 }
 
-                // 2-Column Media Order Grid matching .media-order-grid
                 if (mediaEntries.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         mediaEntries.chunked(2).forEachIndexed { rowIdx, rowEntries ->
@@ -1343,7 +1330,6 @@ fun UploadEditModalDialog(
                                             modifier = Modifier.fillMaxSize()
                                         )
 
-                                        // #1..#4 Badge
                                         Box(
                                             modifier = Modifier
                                                 .align(Alignment.TopStart)
@@ -1361,7 +1347,6 @@ fun UploadEditModalDialog(
                                             )
                                         }
 
-                                        // Remove Button
                                         Box(
                                             modifier = Modifier
                                                 .align(Alignment.TopEnd)
@@ -1377,7 +1362,6 @@ fun UploadEditModalDialog(
                                             Text("✕", color = Color.White, fontSize = 11.sp)
                                         }
 
-                                        // Reorder Buttons
                                         Row(
                                             modifier = Modifier
                                                 .align(Alignment.BottomEnd)
@@ -1515,7 +1499,6 @@ fun UploadEditModalDialog(
         }
     }
 
-    // Custom Themed Time Picker Popup (#timePopover)
     if (showTimePicker) {
         TimePickerPopupDialog(
             hour12 = hour12,
@@ -1537,7 +1520,6 @@ fun UploadEditModalDialog(
         )
     }
 
-    // Custom Themed Calendar Popup (#datePopover)
     if (showDatePicker) {
         DatePickerPopupDialog(
             selectedMMDDYYYY = dateTaken,
@@ -1548,7 +1530,6 @@ fun UploadEditModalDialog(
     }
 }
 
-// Custom 3-Column Scrollable Time Picker Popup matching #timePopover
 @Composable
 private fun TimePickerPopupDialog(
     hour12: Int,
@@ -1568,7 +1549,6 @@ private fun TimePickerPopupDialog(
     val minListState = rememberLazyListState(initialFirstVisibleItemIndex = minute.coerceIn(0, 59))
 
     WebsiteModalShell(colors = colors, maxWidth = 280.dp, onDismiss = onDismiss) {
-        // Header with live Alas-Label preview
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = alasPreview,
@@ -1579,12 +1559,10 @@ private fun TimePickerPopupDialog(
             HorizontalDivider(thickness = 1.dp, color = colors.border)
         }
 
-        // 3 Columns: Hr | Min | AM/PM
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Hr
             Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -1624,7 +1602,6 @@ private fun TimePickerPopupDialog(
                 }
             }
 
-            // Min
             Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -1664,7 +1641,6 @@ private fun TimePickerPopupDialog(
                 }
             }
 
-            // AM/PM
             Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -1704,7 +1680,6 @@ private fun TimePickerPopupDialog(
             }
         }
 
-        // Footer: Now | Done
         HorizontalDivider(thickness = 1.dp, color = colors.border)
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1731,7 +1706,6 @@ private fun TimePickerPopupDialog(
     }
 }
 
-// Custom Themed Calendar Popup matching #datePopover
 @Composable
 private fun DatePickerPopupDialog(
     selectedMMDDYYYY: String,
@@ -1769,14 +1743,13 @@ private fun DatePickerPopupDialog(
 
     val calendarCells = remember(viewMonth) {
         val firstOfMonth = viewMonth.atDay(1)
-        val firstWeekday = firstOfMonth.dayOfWeek.value % 7 // Sunday = 0
+        val firstWeekday = firstOfMonth.dayOfWeek.value % 7
         val startDate = firstOfMonth.minusDays(firstWeekday.toLong())
         val totalCells = if (firstWeekday + viewMonth.lengthOfMonth() <= 35) 35 else 42
         (0 until totalCells).map { startDate.plusDays(it.toLong()) }
     }
 
     WebsiteModalShell(colors = colors, maxWidth = 300.dp, onDismiss = onDismiss) {
-        // Header: ‹ Month Year ›
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1816,7 +1789,6 @@ private fun DatePickerPopupDialog(
 
         HorizontalDivider(thickness = 1.dp, color = colors.border)
 
-        // Weekdays Row
         Row(modifier = Modifier.fillMaxWidth()) {
             listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa").forEach { dayName ->
                 Text(
@@ -1830,7 +1802,6 @@ private fun DatePickerPopupDialog(
             }
         }
 
-        // Day Grid
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             calendarCells.chunked(7).forEach { week ->
                 Row(
@@ -1876,7 +1847,6 @@ private fun DatePickerPopupDialog(
             }
         }
 
-        // Footer: Today | Done
         HorizontalDivider(thickness = 1.dp, color = colors.border)
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1906,14 +1876,13 @@ private fun DatePickerPopupDialog(
     }
 }
 
-// Dashed Border Modifier matching .upload-dropzone
 private fun Modifier.dashedBorder(width: Dp, color: Color, cornerRadius: Dp): Modifier =
     this.then(
         Modifier.drawWithContent {
             drawContent()
             val stroke = Stroke(
                 width = width.toPx(),
-                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f)
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f)
             )
             drawRoundRect(
                 color = color,
@@ -1923,7 +1892,6 @@ private fun Modifier.dashedBorder(width: Dp, color: Color, cornerRadius: Dp): Mo
         }
     )
 
-// Vector Icons matching index.html SVGs
 @Composable
 private fun ClockVectorIcon(color: Color) {
     Canvas(modifier = Modifier.size(15.dp)) {
