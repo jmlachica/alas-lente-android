@@ -630,8 +630,14 @@ fun StoryModalDialog(
                     )
                 }
 
+                val currentStyleLabel = when (storyStyle) {
+                    StoryStyle.AMBIENT_DARK -> "Ambient Dark ↻"
+                    StoryStyle.AMBIENT_LIGHT -> "Ambient Light ↻"
+                    StoryStyle.MATTE_DARK -> "Matte Dark ↻"
+                }
+
                 WebsiteButton(
-                    text = storyStyle.nextLabel,
+                    text = currentStyleLabel,
                     colors = colors,
                     onClick = { storyStyle = storyStyle.next() },
                     fontSizeSp = 11
