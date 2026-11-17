@@ -40,10 +40,6 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-// Keep your existing Cloudinary values here:
-private const val CLOUDINARY_CLOUD_NAME = "YOUR_CLOUD_NAME"
-private const val CLOUDINARY_UPLOAD_PRESET = "YOUR_UPLOAD_PRESET"
-
 /**
  * Converts a raw Cloudinary URL into a fast CDN-resized WebP/AVIF URL for display,
  * while leaving the original raw URL untouched in Firestore.
@@ -147,18 +143,18 @@ suspend fun renderStoryBitmap(
     context: Context,
     post: MomentPost,
     slideIndex: Int,
-    style: StoryStyle
+    storyStyle: StoryStyle
 ): Bitmap = withContext(Dispatchers.IO) {
     val width = 1080
     val height = 1920
     val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(output)
 
-    val isLight = style == StoryStyle.AMBIENT_LIGHT
-    val isMatte = style == StoryStyle.MATTE_DARK
+    val isLight = storyStyle == StoryStyle.AMBIENT_LIGHT
+    val isMatte = storyStyle == StoryStyle.MATTE_DARK
 
     // 1. Solid base background
-    val baseBgColor = when (style) {
+    val baseBgColor = when (storyStyle) {
         StoryStyle.AMBIENT_DARK -> AndroidColor.parseColor("#0D0D12")
         StoryStyle.AMBIENT_LIGHT -> AndroidColor.parseColor("#EBE6DA")
         StoryStyle.MATTE_DARK -> AndroidColor.parseColor("#0B0B0F")
