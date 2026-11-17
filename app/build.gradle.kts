@@ -4,6 +4,10 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+base {
+    archivesName.set("Alas-Lente")
+}
+
 android {
     namespace = "com.alaslente.app"
     compileSdk = 37
