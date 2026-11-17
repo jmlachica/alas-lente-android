@@ -164,14 +164,19 @@ suspend fun renderStoryBitmap(
     // 2. Load photo as software ARGB_8888 bitmap
     val items = post.resolvedMediaItems()
     val activeItem = items.getOrNull(slideIndex) ?: items.firstOrNull()
-    val rawUrl = activeItem?.thumbnailUrl?.ifBlank { activeItem.mediaUrl }.orEmpty()
+    val rawUrl = when {
+        activeItem == null -> ""
+        activeItem.mediaType == "video" -> activeItem.thumbnailUrl.ifBlank { activeItem.mediaUrl }
+        else -> activeItem.mediaUrl.ifBlank { activeItem.thumbnailUrl }
+    }
     val fetchUrl = rawUrl.toOptimizedImageUrl(1440)
 
-    val photoBitmap: Bitmap? = if (fetchUrl.isNotBlank()) {
-        try {
+    suspend fun loadSoftwareBitmap(url: String): Bitmap? {
+        if (url.isBlank()) return null
+        return try {
             val loader = SingletonImageLoader.get(context)
             val request = ImageRequest.Builder(context)
-                .data(fetchUrl)
+                .data(url)
                 .allowHardware(false)
                 .build()
             val result = loader.execute(request)
@@ -179,9 +184,9 @@ suspend fun renderStoryBitmap(
         } catch (_: Exception) {
             null
         }
-    } else {
-        null
     }
+
+    val photoBitmap: Bitmap? = loadSoftwareBitmap(fetchUrl) ?: loadSoftwareBitmap(rawUrl)
 
     // 3. Draw blurred ambient photo backdrop (behind everything else)
     if (!isMatte && photoBitmap != null && photoBitmap.width > 0 && photoBitmap.height > 0) {

@@ -4,6 +4,9 @@ import android.net.Uri
 import android.widget.MediaController
 import android.widget.Toast
 import android.widget.VideoView
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
@@ -588,11 +591,17 @@ fun StoryModalDialog(
         mutableIntStateOf(initialSlide.coerceIn(0, (items.size - 1).coerceAtLeast(0)))
     }
     var storyStyle by remember { mutableStateOf(StoryStyle.AMBIENT_DARK) }
+    var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isRenderingPreview by remember { mutableStateOf(true) }
     var isExporting by remember { mutableStateOf(false) }
     var copiedTip by remember { mutableStateOf(false) }
 
-    val activeItem = items.getOrNull(slideIndex) ?: items.firstOrNull()
-    val imgUrl = activeItem?.thumbnailUrl?.ifBlank { activeItem.mediaUrl }.orEmpty()
+    // Render the exact 1080x1920 bitmap used for Sharing & Saving
+    LaunchedEffect(post.id, slideIndex, storyStyle) {
+        isRenderingPreview = true
+        previewBitmap = renderStoryBitmap(context, post, slideIndex, storyStyle)
+        isRenderingPreview = false
+    }
 
     WebsiteModalShell(colors = colors, maxWidth = 380.dp, onDismiss = onDismiss) {
         Row(
@@ -637,14 +646,13 @@ fun StoryModalDialog(
             }
         }
 
-        val isLight = storyStyle == StoryStyle.AMBIENT_LIGHT
-        val isMatte = storyStyle == StoryStyle.MATTE_DARK
         val canvasBg = when (storyStyle) {
             StoryStyle.AMBIENT_DARK -> Color(0xFF0D0D12)
             StoryStyle.AMBIENT_LIGHT -> Color(0xFFEBE6DA)
             StoryStyle.MATTE_DARK -> Color(0xFF0B0B0F)
         }
 
+        // Exact 9:16 Output Preview
         Box(
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
@@ -655,174 +663,27 @@ fun StoryModalDialog(
                 .background(canvasBg),
             contentAlignment = Alignment.Center
         ) {
-            if (!isMatte && imgUrl.isNotBlank()) {
-                AsyncImage(
-                    model = imgUrl.toOptimizedImageUrl(600),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .scale(1.15f)
-                        .blur(24.dp)
+            val currentBmp = previewBitmap
+            if (currentBmp != null) {
+                Image(
+                    bitmap = currentBmp.asImageBitmap(),
+                    contentDescription = "Story Preview",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        when {
-                            isMatte -> Brush.verticalGradient(
-                                listOf(Color(0xFF191820), Color(0xFF0B0B0F))
-                            )
-                            isLight -> Brush.verticalGradient(
-                                listOf(
-                                    Color(0xADF6F3EC),
-                                    Color(0x8CF6F3EC),
-                                    Color(0xC2F0EBE0)
-                                )
-                            )
-                            else -> Brush.verticalGradient(
-                                listOf(
-                                    Color(0x8F08080C),
-                                    Color(0x6B08080C),
-                                    Color(0xAD08080C)
-                                )
-                            )
-                        }
-                    )
-            )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
-            ) {
-                val cardBg = if (isLight) Color(0xEBFFFFFF) else Color(0xE0121218)
-                val cardBorder = if (isLight) Color(0x1A141418) else Color(0x29FFFFFF)
-                val cardAccent = if (isLight) Color(0xFFC86D1F) else Color(0xFFF09446)
-                val cardText = if (isLight) Color(0xFF18181B) else Color(0xFFF4F3EF)
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(cardBg)
-                        .border(1.dp, cardBorder, RoundedCornerShape(14.dp))
-                        .padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(7.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .background(cardAccent, CircleShape)
-                            )
-                            Text(
-                                text = post.alasLabel.ifBlank { "Alas-Lente" },
-                                color = cardAccent,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(if (isLight) Color(0x12141418) else Color(0x1AFFFFFF))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = post.formatted12h.ifBlank { post.capturedTime },
-                                color = cardText,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-
-                    if (imgUrl.isNotBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(if (isLight) Color(0x0A000000) else Color(0x40000000)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            AsyncImage(
-                                model = imgUrl.toOptimizedImageUrl(1080),
-                                contentDescription = null,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 165.dp)
-                            )
-                        }
-                    }
-
-                    if (post.caption.isNotBlank()) {
-                        Text(
-                            text = post.caption,
-                            color = cardText,
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (post.location.isNotBlank()) "📍 ${post.location}" else "Alas-Lente Archive",
-                            color = cardText.copy(alpha = 0.78f),
-                            fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (post.dateLabel.isNotBlank()) {
-                            Text(
-                                text = post.dateLabel,
-                                color = cardText.copy(alpha = 0.78f),
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                }
-
+            if (isRenderingPreview) {
                 Box(
                     modifier = Modifier
-                        .clip(CircleShape)
-                        .background(if (isLight) Color(0xC7FFFFFF) else Color(0xA60E0E13))
-                        .border(1.dp, cardBorder, CircleShape)
-                        .padding(horizontal = 9.dp, vertical = 3.dp)
+                        .fillMaxSize()
+                        .background(Color(0x660B0B0E)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "ALAS-LENTE  •  BAWAT ORAS MAY KWENTO",
-                        color = cardText.copy(alpha = 0.85f),
-                        fontSize = 8.sp,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 0.4.sp
+                    CircularProgressIndicator(
+                        color = colors.accent,
+                        strokeWidth = 2.5.dp,
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             }
@@ -836,12 +697,12 @@ fun StoryModalDialog(
                 text = if (isExporting) "Preparing..." else "Share Story",
                 colors = colors,
                 isPrimary = true,
-                enabled = !isExporting,
+                enabled = !isExporting && !isRenderingPreview,
                 onClick = {
                     isExporting = true
                     scope.launch {
                         try {
-                            val bmp = renderStoryBitmap(context, post, slideIndex, storyStyle)
+                            val bmp = previewBitmap ?: renderStoryBitmap(context, post, slideIndex, storyStyle)
                             copiedTip = true
                             shareStoryToApps(context, bmp, post)
                         } finally {
@@ -855,12 +716,12 @@ fun StoryModalDialog(
             WebsiteButton(
                 text = "Save 1080×1920",
                 colors = colors,
-                enabled = !isExporting,
+                enabled = !isExporting && !isRenderingPreview,
                 onClick = {
                     isExporting = true
                     scope.launch {
                         try {
-                            val bmp = renderStoryBitmap(context, post, slideIndex, storyStyle)
+                            val bmp = previewBitmap ?: renderStoryBitmap(context, post, slideIndex, storyStyle)
                             val ok = saveStoryToGallery(context, bmp, post.id)
                             Toast.makeText(
                                 context,
