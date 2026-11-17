@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.alaslente.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.alaslente.app"
