@@ -5,7 +5,7 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 private val ALAS_HOURS = mapOf(
-    1 to "Alas-Una",
+    1 to "Ala-Una",
     2 to "Alas-Dos",
     3 to "Alas-Tres",
     4 to "Alas-Kwatro",
